@@ -1,4 +1,3 @@
-Python
 import sys
 import os
 from playwright.sync_api import sync_playwright
@@ -8,7 +7,7 @@ def executar_bot(acao):
     senha = os.environ.get("BOT_SENHA")
 
     with sync_playwright() as p:
-        # Abre o navegador Chromium invisível na nuvem
+        # Abre o navegador Chromium na nuvem
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
@@ -18,7 +17,7 @@ def executar_bot(acao):
         page.fill('input[type="password"]', senha)
         page.click('button[type="submit"]')
 
-        # Aguarda carregar o painel
+        # Aguarda carregar o painel principal
         page.wait_for_selector('text="Transmissões"', timeout=30000)
 
         # 2. Navega até a aba Transmissão
