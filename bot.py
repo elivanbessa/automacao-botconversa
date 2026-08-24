@@ -1,9 +1,29 @@
 import sys
 import os
+import datetime
 import traceback
 from playwright.sync_api import sync_playwright
 
-def executar_bot(acao):
+def dia_permitido(regra_dias):
+    """Verifica se o dia da semana atual é permitido pela regra selecionada."""
+    # 0 = Segunda, 1 = Terça, ..., 5 = Sábado, 6 = Domingo
+    dia_atual = datetime.datetime.now().weekday()
+    
+    if regra_dias == "todos":
+        return True
+    elif regra_dias == "fim_de_semana" and dia_atual in [5, 6]:
+        return True
+    elif regra_dias == "seg,ter,qua,qui,sex" and dia_atual in [0, 1, 2, 3, 4]:
+        return True
+    
+    return False
+
+def executar_bot(acao, regra_dias="todos", forcar=False):
+    # Checagem de dias da semana
+    if not forcar and not dia_permitido(regra_dias):
+        print(f"HOJE NAO É UM DIA PERMITIDO PARA RODAR. Regra: '{regra_dias}'. Execução ignorada com sucesso.")
+        return
+
     email = os.environ.get("BOT_EMAIL")
     senha = os.environ.get("BOT_SENHA")
 
@@ -46,7 +66,6 @@ def executar_bot(acao):
 
             if acao == "start":
                 print("5. Executando comando de INICIAR transmissão...")
-                # Busca por botões de Iniciar, Play, Ativar ou ícones de Play
                 btn_play = page.locator('button:has-text("Iniciar"), button:has-text("Play"), button:has-text("Ativar"), .btn-play, [data-testid="start-broadcast"]').first
                 if btn_play.is_visible(timeout=10000):
                     btn_play.click()
@@ -56,7 +75,6 @@ def executar_bot(acao):
                     
             elif acao == "stop":
                 print("5. Executando comando de PAUSAR transmissão...")
-                # Busca por botões de Pausar, Pause, Parar, Desativar
                 btn_pause = page.locator('button:has-text("Pausar"), button:has-text("Pause"), button:has-text("Parar"), button:has-text("Desativar"), .btn-pause, [data-testid="stop-broadcast"]').first
                 if btn_pause.is_visible(timeout=10000):
                     btn_pause.click()
@@ -74,4 +92,7 @@ def executar_bot(acao):
 
 if __name__ == "__main__":
     acao = sys.argv[1] if len(sys.argv) > 1 else "start"
-    executar_bot(acao)
+    regra_dias = sys.argv[2] if len(sys.argv) > 2 else "todos"
+    forcar = sys.argv[3].lower() == "true" if len(sys.argv) > 3 else False
+    
+    executar_bot(acao, regra_dias, forcar)
