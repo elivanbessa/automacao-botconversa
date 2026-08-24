@@ -1,10 +1,36 @@
 name: Automacao BotConversa
 
 on:
+  # 1. Agendamento diário automático em segundo plano
   schedule:
     - cron: '0 11 * * *'  # 08:00 AM (Horário de Brasília)
     - cron: '0 21 * * *'  # 18:00 PM (Horário de Brasília)
+
+  # 2. Formulário Interativo no Painel do GitHub
   workflow_dispatch:
+    inputs:
+      acao:
+        description: 'Qual ação deseja executar no BotConversa?'
+        required: true
+        default: 'start'
+        type: choice
+        options:
+          - start
+          - stop
+      dias_semana:
+        description: 'Dias da Semana autorizados para rodar'
+        required: true
+        default: 'seg,ter,qua,qui,sex'
+        type: choice
+        options:
+          - 'seg,ter,qua,qui,sex'  # Segunda a Sexta
+          - 'todos'                # Todos os dias
+          - 'fim_de_semana'        # Sábado e Domingo
+      forcar_execucao:
+        description: 'Ignorar checagem de dia da semana e executar agora?'
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   executar:
@@ -23,14 +49,24 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
 
-      - name: Executar Automacao
+      - name: Executar Automacao com Parametros do Formulario
         env:
           BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
           BOT_SENHA: ${{ secrets.BOT_SENHA }}
+          PARAM_ACAO: ${{ inputs.acao }}
+          PARAM_DIAS: ${{ inputs.dias_semana }}
+          PARAM_FORCAR: ${{ inputs.forcar_execucao }}
         run: |
-          HORA=$(date +%H)
-          if [ "$HORA" -eq 11 ]; then
-            python bot.py start
+          # Se o disparo for manual (pelo formulário), usa as escolhas do usuário
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Execução manual acionada pelo formulário."
+            python bot.py "$PARAM_ACAO" "$PARAM_DIAS" "$PARAM_FORCAR"
           else
-            python bot.py stop
+            # Se for pelo agendamento cron automático
+            HORA=$(date +%H)
+            if [ "$HORA" -eq 11 ]; then
+              python bot.py start "$PARAM_DIAS" false
+            else
+              python bot.py stop "$PARAM_DIAS" false
+            fi
           fi
