@@ -7,57 +7,69 @@ def executar_bot(acao):
     senha = os.environ.get("BOT_SENHA")
 
     if not email or not senha:
-        print("ERRO: BOT_EMAIL ou BOT_SENHA não foram encontrados nas Secrets do GitHub!")
+        print("ERRO: Credenciais BOT_EMAIL ou BOT_SENHA nao encontradas nas Secrets!")
         sys.exit(1)
 
     with sync_playwright() as p:
-        # Lança o navegador Chromium
-        browser = p.chromium.launch(headless=True)
-        # Define uma tela padrão para renderizar corretamente a interface do BotConversa
-        context = browser.new_context(viewport={"width": 1280, "height": 720})
+        # Lança navegador com argumentos para evitar bloqueios de automação
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox"
+            ]
+        )
+        
+        # Simula um navegador comum no desktop
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={"width": 1366, "height": 768}
+        )
         page = context.new_page()
 
-        print("Acessando a página de login...")
-        page.goto("https://app.botconversa.com.br/login", wait_until="networkidle")
+        print("Acessando a pagina de login do BotConversa...")
+        page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded", timeout=60000)
+        page.wait_for_timeout(3000)
 
-        # Procura o campo de e-mail por diferentes seletores possíveis
-        print("Preenchendo e-mail e senha...")
-        email_selector = 'input[name="email"], input[type="email"], input[placeholder*="email" i]'
-        page.wait_for_selector(email_selector, timeout=20000)
-        page.fill(email_selector, email)
+        # Preenche o e-mail
+        print("Preenchendo credenciais...")
+        email_input = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]').first
+        email_input.wait_for(state="visible", timeout=30000)
+        email_input.fill(email)
 
-        # Procura o campo de senha
-        senha_selector = 'input[name="password"], input[type="password"]'
-        page.fill(senha_selector, senha)
+        # Preenche a senha
+        senha_input = page.locator('input[type="password"], input[name="password"]').first
+        senha_input.fill(senha)
 
-        # Clica no botão de Entrar/Login
-        print("Enviando formulário de login...")
-        submit_button = 'button[type="submit"], button:has-text("Entrar"), button:has-text("Login")'
-        page.click(submit_button)
+        # Clica no botão de login
+        btn_login = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
+        btn_login.click()
 
-        # Aguarda a navegação após o login
-        print("Aguardando carregamento do painel...")
+        print("Aguardando login...")
+        page.wait_for_timeout(8000)
+
+        # Navega para Transmissões
+        print("Navegando para a aba Transmissoes...")
+        if "login" in page.url:
+            print("Aviso: Pagina ainda no login. Tentando clicar no link direto de transmissao...")
+        
+        page.goto("https://app.botconversa.com.br/broadcasts", wait_until="domcontentloaded", timeout=60000)
         page.wait_for_timeout(5000)
 
-        # Procura o menu ou texto de Transmissões
-        transmissao_selector = 'text="Transmissões", a[href*="broadcast"], [data-testid*="broadcast"]'
-        page.wait_for_selector(transmissao_selector, timeout=30000)
-        page.click(transmissao_selector)
-        page.wait_for_timeout(4000)
-
-        # Executa a ação desejada
+        # Clica na ação (Play ou Pause)
         if acao == "start":
-            print("Procurando botão Iniciar...")
-            play_btn = 'button:has-text("Iniciar"), .btn-play, [data-testid="start-broadcast"]'
-            page.wait_for_selector(play_btn, timeout=15000)
-            page.click(play_btn)
-            print("Transmissão Iniciada com sucesso!")
+            print("Procurando botao para Iniciar...")
+            btn_play = page.locator('button:has-text("Iniciar"), .btn-play, [data-testid="start-broadcast"]').first
+            btn_play.wait_for(state="visible", timeout=20000)
+            btn_play.click()
+            print("Sucesso: Transmissao Iniciada!")
         elif acao == "stop":
-            print("Procurando botão Pausar...")
-            pause_btn = 'button:has-text("Pausar"), .btn-pause, [data-testid="stop-broadcast"]'
-            page.wait_for_selector(pause_btn, timeout=15000)
-            page.click(pause_btn)
-            print("Transmissão Pausada com sucesso!")
+            print("Procurando botao para Pausar...")
+            btn_pause = page.locator('button:has-text("Pausar"), .btn-pause, [data-testid="stop-broadcast"]').first
+            btn_pause.wait_for(state="visible", timeout=20000)
+            btn_pause.click()
+            print("Sucesso: Transmissao Pausada!")
 
         browser.close()
 
