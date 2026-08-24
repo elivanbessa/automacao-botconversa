@@ -1,0 +1,40 @@
+name: Automação BotConversa
+
+on:
+  schedule:
+    # Horários em UTC (Horário de Brasília é UTC-3)
+    # Exemplo: 11:00 UTC = 08:00 AM no Brasil
+    - cron: '0 11 * * *'
+    # Exemplo: 21:00 UTC = 18:00 PM no Brasil
+    - cron: '0 21 * * *'
+    
+  workflow_dispatch: # Permite testar manualmente quando quiser
+
+jobs:
+  executar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependências
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Executar Automação
+        env:
+          BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
+          BOT_SENHA: ${{ secrets.BOT_SENHA }}
+        run: |
+          HORA=$(date +%H)
+          if [ "$HORA" -eq 11 ]; then
+            python bot.py start
+          else
+            python bot.py stop
+          fi
