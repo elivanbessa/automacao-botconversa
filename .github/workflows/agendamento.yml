@@ -1,12 +1,11 @@
 name: Automacao BotConversa
 
 on:
-  # 1. Agendamento diário automático em segundo plano
+  # 1. Agendamento automático (Checa a cada hora para bater com os horários que você escolher)
   schedule:
-    - cron: '0 11 * * *'  # 08:00 AM (Horário de Brasília)
-    - cron: '0 21 * * *'  # 18:00 PM (Horário de Brasília)
+    - cron: '0 * * * *'  # Roda no minuto 0 de cada hora na nuvem
 
-  # 2. Formulário Interativo no Painel do GitHub
+  # 2. Formulário Interativo com opções estendidas
   workflow_dispatch:
     inputs:
       acao:
@@ -18,16 +17,25 @@ on:
           - start
           - stop
       dias_semana:
-        description: 'Dias da Semana autorizados para rodar'
+        description: 'Quais dias da semana deve rodar?'
         required: true
-        default: 'seg,ter,qua,qui,sex'
+        default: 'seg_a_sab'
         type: choice
         options:
+          - 'seg_a_sab'           # Segunda a Sábado
           - 'seg,ter,qua,qui,sex'  # Segunda a Sexta
-          - 'todos'                # Todos os dias
+          - 'todos'                # Todos os dias (Segunda a Domingo)
           - 'fim_de_semana'        # Sábado e Domingo
+      horario_inicio:
+        description: 'Horário de Início (Horário do Brasil - Ex: 08)'
+        required: true
+        default: '08'
+      horario_pausa:
+        description: 'Horário de Pausa (Horário do Brasil - Ex: 18)'
+        required: true
+        default: '18'
       forcar_execucao:
-        description: 'Ignorar checagem de dia da semana e executar agora?'
+        description: 'Ignorar checagem de dia/horário e executar agora?'
         required: true
         default: true
         type: boolean
@@ -55,18 +63,15 @@ jobs:
           BOT_SENHA: ${{ secrets.BOT_SENHA }}
           PARAM_ACAO: ${{ inputs.acao }}
           PARAM_DIAS: ${{ inputs.dias_semana }}
+          PARAM_INICIO: ${{ inputs.horario_inicio }}
+          PARAM_PAUSA: ${{ inputs.horario_pausa }}
           PARAM_FORCAR: ${{ inputs.forcar_execucao }}
         run: |
-          # Se o disparo for manual (pelo formulário), usa as escolhas do usuário
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Execução manual acionada pelo formulário."
-            python bot.py "$PARAM_ACAO" "$PARAM_DIAS" "$PARAM_FORCAR"
+            echo "Execução manual via formulário interativo."
+            python bot.py "$PARAM_ACAO" "$PARAM_DIAS" "$PARAM_FORCAR" "$PARAM_INICIO" "$PARAM_PAUSA"
           else
-            # Se for pelo agendamento cron automático
-            HORA=$(date +%H)
-            if [ "$HORA" -eq 11 ]; then
-              python bot.py start "$PARAM_DIAS" false
-            else
-              python bot.py stop "$PARAM_DIAS" false
-            fi
+            echo "Execução automática via agendamento."
+            # Horários e dias padrão para a execução automática
+            python bot.py "auto" "seg_a_sab" false "08" "18"
           fi
