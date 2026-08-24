@@ -8,22 +8,14 @@ def executar_bot(acao):
     senha = os.environ.get("BOT_SENHA")
 
     if not email or not senha:
-        print("ERRO: Credenciais BOT_EMAIL ou BOT_SENHA nao encontradas nas Secrets!")
+        print("ERRO: Credenciais BOT_EMAIL ou BOT_SENHA nao encontradas!")
         sys.exit(1)
 
     with sync_playwright() as p:
-        # Lança o navegador sem flags restritivas
         browser = p.chromium.launch(
             headless=True,
-            args=[
-                "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage"
-            ]
+            args=["--disable-blink-features=AutomationControlled", "--no-sandbox", "--disable-setuid-sandbox"]
         )
-        
-        # Simula perfil real de navegador Desktop
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1366, "height": 768}
@@ -33,49 +25,48 @@ def executar_bot(acao):
         try:
             print("1. Acessando a pagina de login do BotConversa...")
             page.goto("https://app.botconversa.com.br/login", wait_until="networkidle", timeout=60000)
-            
-            # Aguarda 5 segundos adicionais para garantir a renderização completa do React/Vue
-            page.wait_for_timeout(5000)
+            page.wait_for_timeout(4000)
 
-            print("2. Procurando campos de e-mail e senha...")
-            # Busca flexível que cobre qualquer formato de input no formulário do BotConversa
-            email_locator = page.locator('input[type="email"], input[name="email"], input[placeholder*="mail" i], input[id*="email" i]').first
+            print("2. Preenchendo login e senha...")
+            email_locator = page.locator('input[type="email"], input[name="email"], input[placeholder*="mail" i]').first
             email_locator.wait_for(state="attached", timeout=30000)
-            
-            # Garante que o elemento está visível na tela antes de digitar
-            email_locator.scroll_into_view_if_needed()
             email_locator.fill(email)
 
             senha_locator = page.locator('input[type="password"], input[name="password"]').first
             senha_locator.fill(senha)
 
-            print("3. Clicando no botao de Login...")
+            print("3. Autenticando no sistema...")
             btn_login = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_login.click()
+            page.wait_for_timeout(8000)
 
-            print("4. Aguardando autenticacao e carregamento do painel...")
-            page.wait_for_timeout(10000)
-
-            print("5. Navegando para a aba de Transmissoes...")
+            print("4. Acessando a pagina de Transmissoes...")
             page.goto("https://app.botconversa.com.br/broadcasts", wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(5000)
 
             if acao == "start":
-                print("6. Executando acao: Iniciar Transmissao...")
-                btn_play = page.locator('button:has-text("Iniciar"), .btn-play, [data-testid="start-broadcast"], button:has-text("Play")').first
-                btn_play.wait_for(state="visible", timeout=20000)
-                btn_play.click()
-                print("SUCESSO: Transmissao Iniciada!")
+                print("5. Executando comando de INICIAR transmissão...")
+                # Busca por botões de Iniciar, Play, Ativar ou ícones de Play
+                btn_play = page.locator('button:has-text("Iniciar"), button:has-text("Play"), button:has-text("Ativar"), .btn-play, [data-testid="start-broadcast"]').first
+                if btn_play.is_visible(timeout=10000):
+                    btn_play.click()
+                    print("SUCESSO: Transmissão iniciada!")
+                else:
+                    print("AVISO: Botão de Iniciar não encontrado (a transmissão pode já estar ativa).")
+                    
             elif acao == "stop":
-                print("6. Executando acao: Pausar Transmissao...")
-                btn_pause = page.locator('button:has-text("Pausar"), .btn-pause, [data-testid="stop-broadcast"], button:has-text("Pause")').first
-                btn_pause.wait_for(state="visible", timeout=20000)
-                btn_pause.click()
-                print("SUCESSO: Transmissao Pausada!")
+                print("5. Executando comando de PAUSAR transmissão...")
+                # Busca por botões de Pausar, Pause, Parar, Desativar
+                btn_pause = page.locator('button:has-text("Pausar"), button:has-text("Pause"), button:has-text("Parar"), button:has-text("Desativar"), .btn-pause, [data-testid="stop-broadcast"]').first
+                if btn_pause.is_visible(timeout=10000):
+                    btn_pause.click()
+                    print("SUCESSO: Transmissão pausada!")
+                else:
+                    print("AVISO: Botão de Pausar não encontrado (a transmissão pode já estar parada).")
 
         except Exception as e:
-            print("\n--- OCORREU UM ERRO DURANTE A EXECUCAO ---")
-            print(f"Mensagem de Erro: {e}")
+            print("\n--- OCORREU UM ERRO ---")
+            print(f"Detalhes: {e}")
             traceback.print_exc()
             sys.exit(1)
         finally:
