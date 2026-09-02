@@ -2,7 +2,7 @@ import os
 import sys
 import time
 import unicodedata
-import google.generativeai as genai
+from google import genai
 from playwright.sync_api import sync_playwright
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
@@ -13,8 +13,7 @@ if not GEMINI_KEY or not BOT_EMAIL or not BOT_SENHA:
     print("ERRO: Faltam credenciais nas Secrets (GEMINI_API_KEY, BOT_EMAIL, BOT_SENHA).")
     sys.exit(1)
 
-genai.configure(api_key=GEMINI_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
+client = genai.Client(api_key=GEMINI_KEY)
 
 def normalizar_texto(texto):
     if not texto:
@@ -40,8 +39,11 @@ def analisar_mensagem(texto):
     Mensagem do cliente: "{texto}"
     """
     try:
-        res = model.generate_content(prompt)
-        return res.text
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+        )
+        return response.text
     except Exception as e:
         print(f"Erro na API do Gemini: {e}")
         return "CLASSIFICACAO: NEUTRO\nSUGESTAO: N/A"
@@ -54,41 +56,37 @@ def rodar_triagem():
                 "--disable-blink-features=AutomationControlled",
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
-                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             ]
         )
-        context = browser.new_context(viewport={"width": 1366, "height": 768})
+        context = browser.new_context(
+            viewport={"width": 1366, "height": 768},
+            locale="pt-BR",
+            timezone_id="America/Sao_Paulo"
+        )
         page = context.new_page()
 
         try:
             print("1. Logando no BotConversa...")
-            page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded")
-            page.wait_for_timeout(4000)
-
-            # Seletores flexíveis para o e-mail
-            campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="e-mail" i]').first
-            campo_email.wait_for(state="visible", timeout=15000)
+            # Usa 'commit' para não travar esperando carregamentos lentos da rede externa
+            page.goto("https://app.botconversa.com.br/login", wait_until="commit", timeout=60000)
+            
+            # Aguarda especificamente o campo de input ficar visível na tela
+            campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]').first
+            campo_email.wait_for(state="visible", timeout=30000)
             campo_email.fill(BOT_EMAIL)
 
-            # Seletores flexíveis para a senha
-            campo_senha = page.locator('input[type="password"], input[name="password"], input[placeholder*="senha" i]').first
+            campo_senha = page.locator('input[type="password"], input[name="password"]').first
             campo_senha.fill(BOT_SENHA)
 
-            # Clique no botão de login
-            btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
+            btn_submit = page.locator('button[type="submit"], button:has-text("Entrar")').first
             btn_submit.click()
             
-            print("2. Aguardando login e abrindo o Chat...")
-            page.wait_for_timeout(7000)
+            print("2. Login efetuado. Abrindo o Chat...")
+            page.wait_for_timeout(6000)
 
-            page.goto("https://app.botconversa.com.br/chat", wait_until="networkidle")
+            page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(5000)
-
-            try:
-                page.click('text="Todas"', timeout=3000)
-                page.wait_for_timeout(2000)
-            except:
-                pass
 
             conversas = page.locator('.chat-item, .conversation-item, [data-testid="chat-list-item"]').all()
             print(f"Encontradas {len(conversas)} conversas para análise.")
@@ -107,15 +105,14 @@ def rodar_triagem():
 
                 analise_raw = analisar_mensagem(texto_cliente)
                 analise_norm = normalizar_texto(analise_raw)
-                print(f"Resultado Gemini (bruto):\n{analise_raw}")
+                print(f"Resultado Gemini:\n{analise_raw}")
 
                 if "DUVIDA" in analise_norm and "CLASSIFICACAO:" in analise_norm:
                     sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
-                    print("--> Ação: Dúvida identificada! Processando ações no chat...")
+                    print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                    # 1. Atribuição de Etiqueta
+                    # 1. Aplicar Etiqueta
                     try:
-                        print("    [1/3] Aplicando etiqueta...")
                         btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
                         if btn_tag.is_visible(timeout=4000):
                             btn_tag.click()
@@ -131,15 +128,12 @@ def rodar_triagem():
                                 page.keyboard.press("Enter")
                                 
                             page.wait_for_timeout(1000)
-                            print("    --> Etiqueta '[Atendimento] Dúvida' processada.")
-                        else:
-                            print("    --> AVISO: Botão de etiqueta não visível.")
+                            print("    --> Etiqueta '[Atendimento] Dúvida' adicionada.")
                     except Exception as e_tag:
-                        print(f"    --> AVISO ao aplicar tag: {e_tag}")
+                        print(f"    --> Aviso na tag: {e_tag}")
 
-                    # 2. Inserção de Nota Interna
+                    # 2. Nota Interna
                     try:
-                        print("    [2/3] Adicionando Nota Interna...")
                         btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                         if btn_nota.is_visible(timeout=4000):
                             btn_nota.click()
@@ -147,42 +141,31 @@ def rodar_triagem():
                             campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
                             page.click('button:has-text("Salvar"), button:has-text("Adicionar")')
                             page.wait_for_timeout(1000)
-                            print("    --> Nota interna adicionada.")
-                        else:
-                            print("    --> AVISO: Botão de Nota não visível.")
+                            print("    --> Nota interna salva.")
                     except Exception as e_nota:
-                        print(f"    --> AVISO ao salvar nota: {e_nota}")
+                        print(f"    --> Aviso na nota: {e_nota}")
 
                     # 3. Mover para Atendimento Humano
                     try:
-                        print("    [3/3] Mover para Atendimento Humano...")
                         btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
                         if btn_humano.is_visible(timeout=4000):
                             btn_humano.click()
-                            print("    --> Chat movido para Atendimento Humano.")
-                        else:
-                            print("    --> AVISO: Botão de Atendimento Humano não visível.")
+                            print("    --> Movido para Atendimento Humano.")
                     except Exception as e_humano:
-                        print(f"    --> AVISO ao mover para humano: {e_humano}")
+                        print(f"    --> Aviso no atendimento humano: {e_humano}")
 
                 elif "NEUTRO" in analise_norm or "SAIR" in analise_norm:
-                    print("--> Ação: Mensagem genérica/emoji/opt-out. Arquivando conversa...")
+                    print("--> Ação: Mensagem irrelevante. Arquivando conversa...")
                     try:
                         btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
                         if btn_fechar.is_visible(timeout=4000):
                             btn_fechar.click()
                             print("    --> Conversa arquivada.")
                     except Exception as e_close:
-                        print(f"    --> AVISO ao arquivar: {e_close}")
+                        print(f"    --> Aviso ao arquivar: {e_close}")
 
         except Exception as e:
             print(f"Erro durante a execução principal: {e}")
-            # Tira print da tela para diagnóstico em caso de erro no login
-            try:
-                page.screenshot(path="erro_login.png")
-                print("Foi gerado uma imagem 'erro_login.png' do estado atual da tela.")
-            except:
-                pass
         finally:
             browser.close()
 
