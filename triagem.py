@@ -89,27 +89,15 @@ def rodar_triagem():
             btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
 
-            print("2. Login enviado. Navegando para o Live Chat da organização 69991...")
+            print("2. Login enviado. Navegando para a Caixa de Entrada da Org 69991...")
             page.wait_for_timeout(7000)
 
-            # Rota direta e exata da sua caixa de entrada
-            page.goto("https://app.botconversa.com.br/69991/live-chat/all", wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(8000)
+            page.goto("https://app.botconversa.com.br/69991/live-chat/all", wait_until="networkidle", timeout=60000)
+            page.wait_for_timeout(6000)
 
-            print(f"   URL Atual: {page.url}")
-
-            # Seletores para os cards de conversa na barra lateral do BotConversa
             seletor_conversas = 'a[href*="live-chat"], div[class*="chat"], div[class*="conversation"], [role="button"]'
             
-            # Aguarda pelo menos um card de conversa carregar
-            try:
-                page.wait_for_selector(seletor_conversas, timeout=10000)
-            except:
-                print("   Aviso: Aguardando renderização dinâmica dos chats...")
-
             conversas = page.locator(seletor_conversas).all()
-
-            # Caso haja contêineres de lista de chat
             if len(conversas) == 0:
                 conversas = page.locator('aside div > div, div.flex-1.overflow-y-auto > div').all()
 
@@ -118,13 +106,10 @@ def rodar_triagem():
             for index, conversa in enumerate(conversas[:15]):
                 try:
                     conversa.click(force=True)
-                    page.wait_for_timeout(2500)
+                    page.wait_for_timeout(3000)
 
-                    # Seletores das mensagens dentro do chat
                     msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
-                    
                     if not msgs:
-                        # Fallback para capturar bolhas de texto da conversa aberta
                         msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
 
                     if not msgs:
@@ -142,41 +127,50 @@ def rodar_triagem():
                         sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
                         print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                        # 1. Aplicar Etiqueta
+                        # 1. APLICAR ETIQUETA (Fluxo reforçado)
                         try:
-                            btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
+                            btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag, button:has-text("Tags")').first
                             if btn_tag.is_visible(timeout=4000):
                                 btn_tag.click(force=True)
-                                page.wait_for_timeout(1000)
-                                
-                                input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"]').first
-                                input_tag.fill("[Atendimento] Dúvida", force=True)
                                 page.wait_for_timeout(1500)
                                 
+                                input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"], input[placeholder*="pesquisar" i]').first
+                                input_tag.wait_for(state="visible", timeout=3000)
+                                input_tag.focus()
+                                input_tag.press_sequentially("[Atendimento] Dúvida", delay=100)
+                                page.wait_for_timeout(1500)
+                                
+                                # Tenta clicar no item sugerido pela lista ou pressiona Enter
                                 try:
-                                    page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida")').first.click(timeout=2000)
+                                    item_sugerido = page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida"), div[role="option"]').first
+                                    if item_sugerido.is_visible(timeout=2000):
+                                        item_sugerido.click(force=True)
+                                    else:
+                                        page.keyboard.press("Enter")
                                 except:
                                     page.keyboard.press("Enter")
                                     
                                 page.wait_for_timeout(1000)
-                                print("    --> Etiqueta '[Atendimento] Dúvida' adicionada.")
+                                print("    --> Etiqueta '[Atendimento] Dúvida' enviada.")
                         except Exception as e_tag:
                             print(f"    --> Aviso na tag: {e_tag}")
 
-                        # 2. Nota Interna
+                        # 2. APLICAR NOTA INTERNA
                         try:
                             btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                             if btn_nota.is_visible(timeout=4000):
                                 btn_nota.click(force=True)
+                                page.wait_for_timeout(1000)
                                 campo_nota = page.locator('textarea, [contenteditable="true"]').first
                                 campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}", force=True)
+                                page.wait_for_timeout(500)
                                 page.click('button:has-text("Salvar"), button:has-text("Adicionar")', force=True)
                                 page.wait_for_timeout(1000)
                                 print("    --> Nota interna salva.")
                         except Exception as e_nota:
                             print(f"    --> Aviso na nota: {e_nota}")
 
-                        # 3. Mover para Atendimento Humano
+                        # 3. MOVER PARA ATENDIMENTO HUMANO
                         try:
                             btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
                             if btn_humano.is_visible(timeout=4000):
@@ -196,7 +190,7 @@ def rodar_triagem():
                             print(f"    --> Aviso ao arquivar: {e_close}")
 
                 except Exception as e_item:
-                    print(f"    --> Erro ao processar conversa {index+1}: {e_item}")
+                    print(f"    --> Erro na conversa {index+1}: {e_item}")
 
         except Exception as e:
             print(f"Erro durante a execução principal: {e}")
