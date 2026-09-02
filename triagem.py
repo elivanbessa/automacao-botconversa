@@ -128,36 +128,32 @@ def rodar_triagem():
                         sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
                         print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                        # 1. APLICAR ETIQUETA (Mapeado exatamente com base no print do Perfil)
+                        # 1. APLICAR ETIQUETA (Clique no card cinza filtrado no popover)
                         try:
-                            # Clica no botão "+ Adicionar" da seção Etiquetas
                             btn_add_tag = page.locator('button:has-text("+ Adicionar"), button:has-text("Adicionar")').first
                             if btn_add_tag.is_visible(timeout=4000):
                                 btn_add_tag.click(force=True)
                                 page.wait_for_timeout(1000)
                                 
-                                # Localiza o campo de busca com ícone de lupa dentro do balão popover
                                 campo_busca_tag = page.locator('input[placeholder*="Busca"], input[placeholder*="busca" i]').first
                                 campo_busca_tag.wait_for(state="visible", timeout=3000)
                                 campo_busca_tag.focus()
                                 campo_busca_tag.fill("")
-                                campo_busca_tag.press_sequentially("[Atendimento] Dúvida", delay=80)
+                                campo_busca_tag.press_sequentially("[Atendimento]", delay=80)
                                 page.wait_for_timeout(1500)
 
-                                # Procura a opção correspondente gerada na lista do dropdown e clica
-                                tag_item = page.locator('div, li, span').filter(has_text="[Atendimento] Dúvida").first
-                                if tag_item.is_visible(timeout=3000):
-                                    tag_item.click(force=True)
-                                    print("    --> Clique efetuado no item da etiqueta do dropdown!")
+                                item_cinza = page.locator('div, span, p').filter(has_text="[Atendimento] Dúvida").last
+                                if item_cinza.is_visible(timeout=3000):
+                                    item_cinza.click(force=True)
+                                    print("    --> Clique efetuado no card cinza '[Atendimento] Dúvida'!")
                                 else:
-                                    page.keyboard.press("Enter")
-                                    print("    --> Pressionado Enter para confirmar etiqueta.")
+                                    print("    --> Card cinza da etiqueta não foi encontrado.")
                                     
                                 page.wait_for_timeout(1500)
                         except Exception as e_tag:
-                            print(f"    --> Aviso na tag: {e_tag}")
+                            print(f"    --> Aviso na etiqueta: {e_tag}")
 
-                        # 2. APLICAR NOTA INTERNA (Ícone + na seção Notas do Perfil)
+                        # 2. APLICAR NOTA INTERNA
                         try:
                             btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                             if btn_nota.is_visible(timeout=4000):
