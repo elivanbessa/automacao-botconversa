@@ -89,46 +89,44 @@ def rodar_triagem():
             btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
 
-            print("2. Login enviado. Navegando para o Chat...")
+            print("2. Login enviado. Navegando para o Live Chat da organização 69991...")
+            page.wait_for_timeout(7000)
+
+            # Rota direta e exata da sua caixa de entrada
+            page.goto("https://app.botconversa.com.br/69991/live-chat/all", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(8000)
 
-            # Acessa diretamente a rota de chat do BotConversa
-            page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(6000)
+            print(f"   URL Atual: {page.url}")
 
-            # Clica no filtro para carregar todas as conversas abertas
-            try:
-                page.locator('text="Todas"', timeout=4000).click()
-                page.wait_for_timeout(2000)
-            except:
-                pass
-
-            # Seletores mapeados da barra lateral do BotConversa
-            seletor_conversas = 'a[href*="/chat/"], div[class*="chat-item"], div[class*="conversation"], [data-testid*="chat"], .chat-item'
+            # Seletores para os cards de conversa na barra lateral do BotConversa
+            seletor_conversas = 'a[href*="live-chat"], div[class*="chat"], div[class*="conversation"], [role="button"]'
             
-            # Aguarda a renderização dos itens na barra lateral
+            # Aguarda pelo menos um card de conversa carregar
             try:
-                page.wait_for_selector(seletor_conversas, timeout=15000)
+                page.wait_for_selector(seletor_conversas, timeout=10000)
             except:
-                print("   Aviso: Aguardando lista de conversas carregar...")
+                print("   Aviso: Aguardando renderização dinâmica dos chats...")
 
             conversas = page.locator(seletor_conversas).all()
 
-            # Caso não ache pelos seletores específicos, pega os elementos clicáveis dentro da lista do chat
+            # Caso haja contêineres de lista de chat
             if len(conversas) == 0:
-                print("   Tentando capturar conversas via contêiner da sidebar...")
-                conversas = page.locator('aside div[role="button"], div[class*="list"] > div').all()
+                conversas = page.locator('aside div > div, div.flex-1.overflow-y-auto > div').all()
 
             print(f"Encontradas {len(conversas)} conversas para análise.")
-            print(f"URL Atual: {page.url}")
 
             for index, conversa in enumerate(conversas[:15]):
                 try:
                     conversa.click(force=True)
                     page.wait_for_timeout(2500)
 
-                    # Seletores para pegar a última mensagem recebida do cliente
+                    # Seletores das mensagens dentro do chat
                     msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
+                    
+                    if not msgs:
+                        # Fallback para capturar bolhas de texto da conversa aberta
+                        msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
+
                     if not msgs:
                         continue
                     
@@ -148,11 +146,11 @@ def rodar_triagem():
                         try:
                             btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
                             if btn_tag.is_visible(timeout=4000):
-                                btn_tag.click()
+                                btn_tag.click(force=True)
                                 page.wait_for_timeout(1000)
                                 
                                 input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"]').first
-                                input_tag.fill("[Atendimento] Dúvida")
+                                input_tag.fill("[Atendimento] Dúvida", force=True)
                                 page.wait_for_timeout(1500)
                                 
                                 try:
@@ -169,10 +167,10 @@ def rodar_triagem():
                         try:
                             btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                             if btn_nota.is_visible(timeout=4000):
-                                btn_nota.click()
+                                btn_nota.click(force=True)
                                 campo_nota = page.locator('textarea, [contenteditable="true"]').first
-                                campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
-                                page.click('button:has-text("Salvar"), button:has-text("Adicionar")')
+                                campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}", force=True)
+                                page.click('button:has-text("Salvar"), button:has-text("Adicionar")', force=True)
                                 page.wait_for_timeout(1000)
                                 print("    --> Nota interna salva.")
                         except Exception as e_nota:
@@ -182,7 +180,7 @@ def rodar_triagem():
                         try:
                             btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
                             if btn_humano.is_visible(timeout=4000):
-                                btn_humano.click()
+                                btn_humano.click(force=True)
                                 print("    --> Movido para Atendimento Humano.")
                         except Exception as e_humano:
                             print(f"    --> Aviso no atendimento humano: {e_humano}")
@@ -192,13 +190,13 @@ def rodar_triagem():
                         try:
                             btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
                             if btn_fechar.is_visible(timeout=4000):
-                                btn_fechar.click()
+                                btn_fechar.click(force=True)
                                 print("    --> Conversa arquivada.")
                         except Exception as e_close:
                             print(f"    --> Aviso ao arquivar: {e_close}")
 
                 except Exception as e_item:
-                    print(f"    --> Erro ao ler conversa {index+1}: {e_item}")
+                    print(f"    --> Erro ao processar conversa {index+1}: {e_item}")
 
         except Exception as e:
             print(f"Erro durante a execução principal: {e}")
