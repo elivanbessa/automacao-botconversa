@@ -25,18 +25,18 @@ def normalizar_texto(texto):
 
 def analisar_mensagem(texto):
     prompt = f"""
-    Você é um triador de mensagens no WhatsApp.
-    Analise a mensagem do cliente e responda ESTRITAMENTE no seguinte formato:
+    Você é um triador de mensagens no WhatsApp de uma loja de móveis/atendimento.
+    Analise a mensagem do CLIENTE e responda ESTRITAMENTE no seguinte formato:
 
     CLASSIFICACAO: <DUVIDA ou NEUTRO ou SAIR>
     SUGESTAO: <Sugestão de resposta curta se for DUVIDA, ou 'N/A' se for NEUTRO/SAIR>
 
-    Regras:
-    - DUVIDA: Se pediu preço, catálogo, frete, localização, tamanho ou tirou dúvidas do produto.
-    - NEUTRO: Apenas emojis, figurinhas, 'ok', 'obrigado', saudações curtas ou disparos automáticos.
-    - SAIR: Pediu para parar de enviar mensagens, xingou ou pediu cancelamento.
+    Regras de Classificação:
+    - DUVIDA: O cliente perguntou sobre preço, valores, tamanho, catálogo, fotos, frete, prazo de entrega, localização da loja ou tirou dúvidas de móveis/produtos (ex: 'quero saber o preço de mesa').
+    - NEUTRO: Apenas emojis, saudações curtas ('oi', 'tudo bem'), figurinhas, 'ok', 'obrigado', mensagens de confirmação automática do sistema ou disparos.
+    - SAIR: Pediu para cancelar, parar de mandar mensagem, xingou ou disse 'sair'.
 
-    Mensagem do cliente: "{texto}"
+    Mensagem enviada pelo cliente: "{texto}"
     """
     try:
         response = client.models.generate_content(
@@ -89,10 +89,11 @@ def rodar_triagem():
             btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
 
-            print("2. Login enviado. Navegando para a Caixa de Entrada da Org 69991...")
+            print("2. Login enviado. Navegando para a aba de NÃO LIDAS (unread)...")
             page.wait_for_timeout(7000)
 
-            page.goto("https://app.botconversa.com.br/69991/live-chat/all", wait_until="networkidle", timeout=60000)
+            # Rota focada em mensagens que chegaram e não foram respondidas
+            page.goto("https://app.botconversa.com.br/69991/live-chat/unread", wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(6000)
 
             seletor_conversas = 'a[href*="live-chat"], div[class*="chat"], div[class*="conversation"], [role="button"]'
@@ -101,24 +102,32 @@ def rodar_triagem():
             if len(conversas) == 0:
                 conversas = page.locator('aside div > div, div.flex-1.overflow-y-auto > div').all()
 
-            print(f"Encontradas {len(conversas)} conversas para análise.")
+            print(f"Encontradas {len(conversas)} conversas não lidas para análise.")
 
             for index, conversa in enumerate(conversas[:30]):
                 try:
                     conversa.click(force=True)
                     page.wait_for_timeout(2500)
 
-                    msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
-                    if not msgs:
-                        msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
+                    # Busca especificamente mensagens RECEBIDAS do cliente (ignora bolhas do sistema)
+                    msgs_cliente = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
+                    
+                    texto_cliente = ""
+                    if msgs_cliente:
+                        # Pega a última mensagem enviada pelo cliente
+                        texto_cliente = msgs_cliente[-1].text_content().strip()
+                    else:
+                        # Fallback: pega todas as bolhas e filtra textos curtos ou do robô
+                        todas_msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
+                        if todas_msgs:
+                            texto_cliente = todas_msgs[-1].text_content().strip()
 
-                    if not msgs:
-                        print(f"   [Conversa {index+1}] Sem bolhas de mensagem legíveis.")
+                    if not texto_cliente:
+                        print(f"   [Conversa {index+1}] Nenhuma mensagem do cliente encontrada.")
                         continue
                     
-                    texto_cliente = msgs[-1].text_content().strip()
                     print(f"\n--- Conversa {index+1} ---")
-                    print(f"Texto extraído: '{texto_cliente}'")
+                    print(f"Texto do Cliente Capturado: '{texto_cliente}'")
 
                     analise_raw = analisar_mensagem(texto_cliente)
                     analise_norm = normalizar_texto(analise_raw)
@@ -126,9 +135,9 @@ def rodar_triagem():
 
                     if "DUVIDA" in analise_norm and "CLASSIFICACAO:" in analise_norm:
                         sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
-                        print("--> Ação: Dúvida identificada! Aplicando ações...")
+                        print("--> Ação: Dúvida identificada! Aplicando etiqueta no Perfil...")
 
-                        # 1. APLICAR ETIQUETA (Clique no card cinza filtrado no popover)
+                        # 1. APLICAR ETIQUETA (Localiza o painel do Perfil)
                         try:
                             btn_add_tag = page.locator('button:has-text("+ Adicionar"), button:has-text("Adicionar")').first
                             if btn_add_tag.is_visible(timeout=4000):
@@ -147,7 +156,7 @@ def rodar_triagem():
                                     item_cinza.click(force=True)
                                     print("    --> Clique efetuado no card cinza '[Atendimento] Dúvida'!")
                                 else:
-                                    print("    --> Card cinza da etiqueta não foi encontrado.")
+                                    print("    --> Card cinza da etiqueta não foi localizado.")
                                     
                                 page.wait_for_timeout(1500)
                         except Exception as e_tag:
@@ -178,14 +187,7 @@ def rodar_triagem():
                             print(f"    --> Aviso no atendimento humano: {e_humano}")
 
                     elif "NEUTRO" in analise_norm or "SAIR" in analise_norm:
-                        print("--> Ação: Mensagem irrelevante. Arquivando conversa...")
-                        try:
-                            btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
-                            if btn_fechar.is_visible(timeout=4000):
-                                btn_fechar.click(force=True)
-                                print("    --> Conversa arquivada.")
-                        except Exception as e_close:
-                            print(f"    --> Aviso ao arquivar: {e_close}")
+                        print("--> Ação: Mensagem neutra/irrelevante.")
 
                 except Exception as e_item:
                     print(f"    --> Erro na conversa {index+1}: {e_item}")
