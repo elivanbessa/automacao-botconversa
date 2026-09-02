@@ -1,11 +1,9 @@
 name: Triagem de Caixa de Entrada (IA Gemini)
 
 on:
-  # Roda sozinho a cada 30 minutos na nuvem
   schedule:
     - cron: '*/30 * * * *'
 
-  # Permite rodar manualmente a qualquer momento pelo botão "Run workflow"
   workflow_dispatch:
 
 jobs:
@@ -13,10 +11,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Baixar codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.3.0
         with:
           python-version: '3.10'
 
@@ -26,7 +24,6 @@ jobs:
           playwright install --with-deps chromium
 
       - name: Executar Triagem no BotConversa
-        # Puxa o e-mail e a senha que você JÁ TEM nas Secrets, mais a chave do Gemini
         env:
           BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
           BOT_SENHA: ${{ secrets.BOT_SENHA }}
