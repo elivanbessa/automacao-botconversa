@@ -103,21 +103,24 @@ def rodar_triagem():
 
             print(f"Encontradas {len(conversas)} conversas para análise.")
 
-            for index, conversa in enumerate(conversas[:15]):
+            # Varre até 30 conversas para garantir alcance dos testes
+            for index, conversa in enumerate(conversas[:30]):
                 try:
                     conversa.click(force=True)
-                    page.wait_for_timeout(3000)
+                    page.wait_for_timeout(2500)
 
+                    # Busca mensagens do cliente ou a última bolha visível no chat
                     msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
                     if not msgs:
                         msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
 
                     if not msgs:
+                        print(f"   [Conversa {index+1}] Sem bolhas de mensagem legíveis.")
                         continue
                     
                     texto_cliente = msgs[-1].text_content().strip()
                     print(f"\n--- Conversa {index+1} ---")
-                    print(f"Texto do Cliente: '{texto_cliente}'")
+                    print(f"Texto extraído: '{texto_cliente}'")
 
                     analise_raw = analisar_mensagem(texto_cliente)
                     analise_norm = normalizar_texto(analise_raw)
@@ -127,7 +130,7 @@ def rodar_triagem():
                         sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
                         print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                        # 1. APLICAR ETIQUETA (Fluxo reforçado)
+                        # 1. APLICAR ETIQUETA
                         try:
                             btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag, button:has-text("Tags")').first
                             if btn_tag.is_visible(timeout=4000):
@@ -140,7 +143,6 @@ def rodar_triagem():
                                 input_tag.press_sequentially("[Atendimento] Dúvida", delay=100)
                                 page.wait_for_timeout(1500)
                                 
-                                # Tenta clicar no item sugerido pela lista ou pressiona Enter
                                 try:
                                     item_sugerido = page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida"), div[role="option"]').first
                                     if item_sugerido.is_visible(timeout=2000):
