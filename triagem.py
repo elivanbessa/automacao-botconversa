@@ -58,9 +58,7 @@ def rodar_triagem():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-infobars",
-                "--window-position=0,0",
                 "--ignore-certificate-errors",
-                "--ignore-certificate-errors-spki-list",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             ]
         )
@@ -71,31 +69,47 @@ def rodar_triagem():
         )
         
         page = context.new_page()
-        stealth_sync(page)  # Bula a detecção de automação nos seletores do Cloudflare
+        stealth_sync(page)
 
         try:
-            print("1. Acessando a página de Login...")
-            page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded", timeout=60000)
+            print("1. Acessando a área restrita para forçar a tela de login final...")
+            # Força o acesso direto ao chat; o app faz o redirecionamento automático
+            page.goto("https://app.botconversa.com.br/chat", wait_until="commit", timeout=60000)
             page.wait_for_timeout(5000)
 
-            print(f"   URL carregada: {page.url}")
+            print(f"   URL de destino após redirecionamento: {page.url}")
 
-            # Busca dinâmica por qualquer input de texto para o login
-            campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i], input').first
-            campo_email.wait_for(state="visible", timeout=30000)
-            campo_email.fill(BOT_EMAIL)
+            # Localiza o formulário no frame principal ou em subframes
+            target_page = page
+            inputs = page.locator('input').all()
+            
+            if len(inputs) == 0:
+                print("   Buscando formulários dentro de frames secundários...")
+                for frame in page.frames:
+                    if len(frame.locator('input').all()) > 0:
+                        target_page = frame
+                        inputs = frame.locator('input').all()
+                        print(f"   Formulário encontrado no Frame: {frame.url}")
+                        break
 
-            campo_senha = page.locator('input[type="password"], input[name="password"]').first
-            campo_senha.fill(BOT_SENHA)
+            print(f"   Inputs detectados: {len(inputs)}. Preenchendo credenciais...")
+            
+            # Preenchimento direto sem aguardar estado 'visible' do Playwright
+            campo_email = target_page.locator('input[type="email"], input[name="email"], input[placeholder*="e-mail" i], input[placeholder*="email" i], input').first
+            campo_email.fill(BOT_EMAIL, force=True)
 
-            btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
-            btn_submit.click()
+            campo_senha = target_page.locator('input[type="password"], input[name="password"]').first
+            campo_senha.fill(BOT_SENHA, force=True)
 
-            print("2. Login enviado. Navegando para a Caixa de Entrada...")
-            page.wait_for_timeout(7000)
+            btn_submit = target_page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
+            btn_submit.click(force=True)
 
-            page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
-            page.wait_for_timeout(5000)
+            print("2. Login enviado. Aguardando a caixa de entrada carregar...")
+            page.wait_for_timeout(8000)
+
+            if "chat" not in page.url:
+                page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
+                page.wait_for_timeout(5000)
 
             conversas = page.locator('.chat-item, .conversation-item, [data-testid="chat-list-item"]').all()
             print(f"Encontradas {len(conversas)} conversas para análise.")
