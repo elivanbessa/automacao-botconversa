@@ -69,7 +69,7 @@ def rodar_triagem():
         
         page = context.new_page()
         
-        # Oculta propriedades nativas que revelam o Playwright para o Cloudflare
+        # Injeta propriedades via JS nativo para burlar detecções anti-bot
         page.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
