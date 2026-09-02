@@ -17,7 +17,6 @@ genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 def normalizar_texto(texto):
-    """Remove acentos e converte para maiúsculas para evitar falhas de comparação."""
     if not texto:
         return ""
     return ''.join(
@@ -51,24 +50,40 @@ def rodar_triagem():
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ]
         )
         context = browser.new_context(viewport={"width": 1366, "height": 768})
         page = context.new_page()
 
         try:
             print("1. Logando no BotConversa...")
-            page.goto("https://app.botconversa.com.br/login", wait_until="networkidle")
-            page.fill('input[type="email"]', BOT_EMAIL)
-            page.fill('input[type="password"]', BOT_SENHA)
-            page.click('button[type="submit"]')
+            page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded")
+            page.wait_for_timeout(4000)
+
+            # Seletores flexíveis para o e-mail
+            campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i], input[placeholder*="e-mail" i]').first
+            campo_email.wait_for(state="visible", timeout=15000)
+            campo_email.fill(BOT_EMAIL)
+
+            # Seletores flexíveis para a senha
+            campo_senha = page.locator('input[type="password"], input[name="password"], input[placeholder*="senha" i]').first
+            campo_senha.fill(BOT_SENHA)
+
+            # Clique no botão de login
+            btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
+            btn_submit.click()
+            
+            print("2. Aguardando login e abrindo o Chat...")
             page.wait_for_timeout(7000)
 
-            print("2. Abrindo a caixa de entrada (Chat)...")
             page.goto("https://app.botconversa.com.br/chat", wait_until="networkidle")
             page.wait_for_timeout(5000)
 
-            # Tenta garantir que está visualizando todas as conversas/não lidas
             try:
                 page.click('text="Todas"', timeout=3000)
                 page.wait_for_timeout(2000)
@@ -100,7 +115,7 @@ def rodar_triagem():
 
                     # 1. Atribuição de Etiqueta
                     try:
-                        print("    [1/3] Tentando aplicar etiqueta...")
+                        print("    [1/3] Aplicando etiqueta...")
                         btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
                         if btn_tag.is_visible(timeout=4000):
                             btn_tag.click()
@@ -110,7 +125,6 @@ def rodar_triagem():
                             input_tag.fill("[Atendimento] Dúvida")
                             page.wait_for_timeout(1500)
                             
-                            # Tenta clicar no item da etiqueta na lista suspensa; se falhar, pressiona Enter
                             try:
                                 page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida")').first.click(timeout=2000)
                             except:
@@ -125,7 +139,7 @@ def rodar_triagem():
 
                     # 2. Inserção de Nota Interna
                     try:
-                        print("    [2/3] Tentando adicionar Nota Interna...")
+                        print("    [2/3] Adicionando Nota Interna...")
                         btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                         if btn_nota.is_visible(timeout=4000):
                             btn_nota.click()
@@ -163,6 +177,12 @@ def rodar_triagem():
 
         except Exception as e:
             print(f"Erro durante a execução principal: {e}")
+            # Tira print da tela para diagnóstico em caso de erro no login
+            try:
+                page.screenshot(path="erro_login.png")
+                print("Foi gerado uma imagem 'erro_login.png' do estado atual da tela.")
+            except:
+                pass
         finally:
             browser.close()
 
