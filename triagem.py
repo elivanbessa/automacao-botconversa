@@ -50,7 +50,6 @@ def analisar_mensagem(texto):
 
 def rodar_triagem():
     with sync_playwright() as p:
-        # Configurações do Chromium sem stealth externo para evitar conflitos de versão
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -70,17 +69,11 @@ def rodar_triagem():
         
         page = context.new_page()
         
-        # Bula as propriedades comuns de detecção de automação
+        # Oculta propriedades nativas que revelam o Playwright para o Cloudflare
         page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['pt-BR', 'pt', 'en-US', 'en']
-            });
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
         """)
 
         try:
