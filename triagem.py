@@ -72,14 +72,12 @@ def rodar_triagem():
         stealth_sync(page)
 
         try:
-            print("1. Acessando a área restrita para forçar a tela de login final...")
-            # Força o acesso direto ao chat; o app faz o redirecionamento automático
+            print("1. Acessando a área do BotConversa...")
             page.goto("https://app.botconversa.com.br/chat", wait_until="commit", timeout=60000)
             page.wait_for_timeout(5000)
 
-            print(f"   URL de destino após redirecionamento: {page.url}")
+            print(f"   URL atual: {page.url}")
 
-            # Localiza o formulário no frame principal ou em subframes
             target_page = page
             inputs = page.locator('input').all()
             
@@ -94,7 +92,6 @@ def rodar_triagem():
 
             print(f"   Inputs detectados: {len(inputs)}. Preenchendo credenciais...")
             
-            # Preenchimento direto sem aguardar estado 'visible' do Playwright
             campo_email = target_page.locator('input[type="email"], input[name="email"], input[placeholder*="e-mail" i], input[placeholder*="email" i], input').first
             campo_email.fill(BOT_EMAIL, force=True)
 
