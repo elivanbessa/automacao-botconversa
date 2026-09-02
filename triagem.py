@@ -68,10 +68,10 @@ def rodar_triagem():
 
         try:
             print("1. Logando no BotConversa...")
-            # Usa 'commit' para não travar esperando carregamentos lentos da rede externa
-            page.goto("https://app.botconversa.com.br/login", wait_until="commit", timeout=60000)
+            # Força a navegação a avançar assim que o DOM carregar
+            page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded", timeout=60000)
             
-            # Aguarda especificamente o campo de input ficar visível na tela
+            # Aguarda especificamente o campo de input de e-mail
             campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i]').first
             campo_email.wait_for(state="visible", timeout=30000)
             campo_email.fill(BOT_EMAIL)
@@ -82,7 +82,7 @@ def rodar_triagem():
             btn_submit = page.locator('button[type="submit"], button:has-text("Entrar")').first
             btn_submit.click()
             
-            print("2. Login efetuado. Abrindo o Chat...")
+            print("2. Login efetuado. Abrindo a caixa de entrada (Chat)...")
             page.wait_for_timeout(6000)
 
             page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
