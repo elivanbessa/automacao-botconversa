@@ -4,7 +4,6 @@ import time
 import unicodedata
 from google import genai
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 BOT_EMAIL = os.environ.get("BOT_EMAIL")
@@ -51,6 +50,7 @@ def analisar_mensagem(texto):
 
 def rodar_triagem():
     with sync_playwright() as p:
+        # Configurações do Chromium sem stealth externo para evitar conflitos de versão
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -69,7 +69,19 @@ def rodar_triagem():
         )
         
         page = context.new_page()
-        stealth_sync(page)
+        
+        # Bula as propriedades comuns de detecção de automação
+        page.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['pt-BR', 'pt', 'en-US', 'en']
+            });
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+        """)
 
         try:
             print("1. Acessando a área do BotConversa...")
