@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import unicodedata
 import google.generativeai as genai
 from playwright.sync_api import sync_playwright
 
@@ -14,6 +15,13 @@ if not GEMINI_KEY or not BOT_EMAIL or not BOT_SENHA:
 
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
+
+def normalizar_texto(texto):
+    """Remove acentos e converte para maiúsculas para evitar erros de comparação."""
+    return ''.join(
+        c for c in unicodedata.normalize('NFD', texto)
+        if unicodedata.category(c) != 'Mn'
+    ).upper()
 
 def analisar_mensagem(texto):
     prompt = f"""
@@ -58,6 +66,13 @@ def rodar_triagem():
             page.goto("https://app.botconversa.com.br/chat", wait_until="networkidle")
             page.wait_for_timeout(5000)
 
+            # Clica para garantir que está vendo todas as conversas/não lidas
+            try:
+                page.click('text="Todas"', timeout=3000)
+                page.wait_for_timeout(2000)
+            except:
+                pass
+
             conversas = page.locator('.chat-item, .conversation-item, [data-testid="chat-list-item"]').all()
             print(f"Encontradas {len(conversas)} conversas para análise.")
 
@@ -73,28 +88,30 @@ def rodar_triagem():
                 print(f"\n--- Conversa {index+1} ---")
                 print(f"Texto do Cliente: {texto_cliente}")
 
-                analise = analisar_mensagem(texto_cliente)
-                print(f"Resultado Gemini:\n{analise}")
+                analise_raw = analisar_mensagem(texto_cliente)
+                analise_norm = normalizar_texto(analise_raw)
+                print(f"Resultado Gemini (bruto):\n{analise_raw}")
 
-                if "CLASSIFICACAO: DUVIDA" in analise:
-                    sugestao = analise.split("SUGESTAO:")[-1].strip()
+                if "DUVIDA" in analise_norm and "CLASSIFICACAO:" in analise_norm:
+                    sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
                     print("--> Ação: É Dúvida! Processando...")
 
-                    # 1. Atribuição de Etiqueta com fallback
+                    # 1. Atribuição de Etiqueta
                     try:
-                        btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"]').first
+                        btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
                         if btn_tag.is_visible(timeout=4000):
                             btn_tag.click()
                             page.wait_for_timeout(1000)
-                            input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"]').first
+                            input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"]').first
                             input_tag.fill("[Atendimento] Dúvida")
                             page.wait_for_timeout(1000)
                             page.keyboard.press("Enter")
                             page.wait_for_timeout(1000)
+                            print("--> Etiqueta '[Atendimento] Dúvida' aplicada com sucesso.")
                     except Exception as e_tag:
-                        print(f"Aviso na tag (Certifique-se de que '[Atendimento] Dúvida' foi criada no painel): {e_tag}")
+                        print(f"Aviso ao aplicar tag: {e_tag}")
 
-                    # 2. Inserção de Nota Interna Amarela
+                    # 2. Inserção de Nota Interna
                     try:
                         btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                         if btn_nota.is_visible(timeout=4000):
@@ -103,18 +120,20 @@ def rodar_triagem():
                             campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
                             page.click('button:has-text("Salvar"), button:has-text("Adicionar")')
                             page.wait_for_timeout(1000)
+                            print("--> Nota interna adicionada.")
                     except Exception as e_nota:
                         print(f"Aviso ao salvar nota: {e_nota}")
 
-                    # 3. Transição para Atendimento Humano
+                    # 3. Mover para Atendimento Humano
                     try:
                         btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
                         if btn_humano.is_visible(timeout=4000):
                             btn_humano.click()
+                            print("--> Movido para Atendimento Humano.")
                     except Exception as e_humano:
                         print(f"Aviso ao mover para humano: {e_humano}")
 
-                elif "CLASSIFICACAO: NEUTRO" in analise or "CLASSIFICACAO: SAIR" in analise:
+                elif "NEUTRO" in analise_norm or "SAIR" in analise_norm:
                     print("--> Ação: Mensagem genérica/emoji. Arquivando conversa...")
                     try:
                         btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
