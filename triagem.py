@@ -76,72 +76,58 @@ def rodar_triagem():
         """)
 
         try:
-            print("1. Acessando a área do BotConversa...")
-            page.goto("https://app.botconversa.com.br/chat", wait_until="commit", timeout=60000)
-            page.wait_for_timeout(4000)
+            print("1. Efetuando Login no BotConversa...")
+            page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(3000)
 
-            target_page = page
-            inputs = page.locator('input').all()
-            
-            if len(inputs) == 0:
-                for frame in page.frames:
-                    if len(frame.locator('input').all()) > 0:
-                        target_page = frame
-                        inputs = frame.locator('input').all()
-                        break
-
-            print(f"   Inputs detectados: {len(inputs)}. Preenchendo credenciais...")
-            
-            campo_email = target_page.locator('input[type="email"], input[name="email"], input[placeholder*="e-mail" i], input[placeholder*="email" i], input').first
+            campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i], input').first
             campo_email.fill(BOT_EMAIL, force=True)
 
-            campo_senha = target_page.locator('input[type="password"], input[name="password"]').first
+            campo_senha = page.locator('input[type="password"], input[name="password"]').first
             campo_senha.fill(BOT_SENHA, force=True)
 
-            btn_submit = target_page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
+            btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
 
-            print("2. Login enviado. Aguardando processamento...")
-            page.wait_for_timeout(10000)
+            print("2. Login enviado. Navegando para o Chat...")
+            page.wait_for_timeout(8000)
 
-            # Se houver tela de seleção de empresa/organização, clica no primeiro item
+            # Acessa diretamente a rota de chat do BotConversa
+            page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
+            page.wait_for_timeout(6000)
+
+            # Clica no filtro para carregar todas as conversas abertas
             try:
-                empresa = page.locator('.company-item, .select-org, [data-testid="org-item"]').first
-                if empresa.is_visible(timeout=3000):
-                    empresa.click()
-                    page.wait_for_timeout(5000)
+                page.locator('text="Todas"', timeout=4000).click()
+                page.wait_for_timeout(2000)
             except:
                 pass
 
-            # Garante que está na rota do Chat
-            if "/chat" not in page.url:
-                page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(8000)
-
-            # Garante clique nas abas para renderizar os itens
-            try:
-                page.locator('text="Todas", text="Abertas", text="Não lidas"').first.click(timeout=3000)
-                page.wait_for_timeout(3000)
-            except:
-                pass
-
-            # Seletores abrangentes para a lista de conversas na sidebar
-            seletor_conversas = '.chat-item, .conversation-item, [data-testid="chat-list-item"], div[class*="chat"], div[class*="conversation"], a[href*="/chat/"]'
+            # Seletores mapeados da barra lateral do BotConversa
+            seletor_conversas = 'a[href*="/chat/"], div[class*="chat-item"], div[class*="conversation"], [data-testid*="chat"], .chat-item'
             
-            # Aguarda pelo menos um elemento da lista aparecer
+            # Aguarda a renderização dos itens na barra lateral
             try:
                 page.wait_for_selector(seletor_conversas, timeout=15000)
             except:
-                print("   Aviso: Tempo esgotado aguardando o seletor padrão. Tentando mapear itens dinamicamente...")
+                print("   Aviso: Aguardando lista de conversas carregar...")
 
             conversas = page.locator(seletor_conversas).all()
+
+            # Caso não ache pelos seletores específicos, pega os elementos clicáveis dentro da lista do chat
+            if len(conversas) == 0:
+                print("   Tentando capturar conversas via contêiner da sidebar...")
+                conversas = page.locator('aside div[role="button"], div[class*="list"] > div').all()
+
             print(f"Encontradas {len(conversas)} conversas para análise.")
+            print(f"URL Atual: {page.url}")
 
             for index, conversa in enumerate(conversas[:15]):
                 try:
                     conversa.click(force=True)
                     page.wait_for_timeout(2500)
 
+                    # Seletores para pegar a última mensagem recebida do cliente
                     msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
                     if not msgs:
                         continue
@@ -158,7 +144,7 @@ def rodar_triagem():
                         sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
                         print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                        # 1. Etiqueta
+                        # 1. Aplicar Etiqueta
                         try:
                             btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
                             if btn_tag.is_visible(timeout=4000):
@@ -210,8 +196,9 @@ def rodar_triagem():
                                 print("    --> Conversa arquivada.")
                         except Exception as e_close:
                             print(f"    --> Aviso ao arquivar: {e_close}")
+
                 except Exception as e_item:
-                    print(f"    --> Erro ao processar conversa {index+1}: {e_item}")
+                    print(f"    --> Erro ao ler conversa {index+1}: {e_item}")
 
         except Exception as e:
             print(f"Erro durante a execução principal: {e}")
