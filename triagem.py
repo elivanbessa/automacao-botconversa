@@ -103,13 +103,11 @@ def rodar_triagem():
 
             print(f"Encontradas {len(conversas)} conversas para análise.")
 
-            # Varre até 30 conversas para garantir alcance dos testes
             for index, conversa in enumerate(conversas[:30]):
                 try:
                     conversa.click(force=True)
                     page.wait_for_timeout(2500)
 
-                    # Busca mensagens do cliente ou a última bolha visível no chat
                     msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
                     if not msgs:
                         msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
@@ -130,34 +128,36 @@ def rodar_triagem():
                         sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
                         print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                        # 1. APLICAR ETIQUETA
+                        # 1. APLICAR ETIQUETA (Mapeado exatamente com base no print do Perfil)
                         try:
-                            btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag, button:has-text("Tags")').first
-                            if btn_tag.is_visible(timeout=4000):
-                                btn_tag.click(force=True)
-                                page.wait_for_timeout(1500)
-                                
-                                input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"], input[placeholder*="pesquisar" i]').first
-                                input_tag.wait_for(state="visible", timeout=3000)
-                                input_tag.focus()
-                                input_tag.press_sequentially("[Atendimento] Dúvida", delay=100)
-                                page.wait_for_timeout(1500)
-                                
-                                try:
-                                    item_sugerido = page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida"), div[role="option"]').first
-                                    if item_sugerido.is_visible(timeout=2000):
-                                        item_sugerido.click(force=True)
-                                    else:
-                                        page.keyboard.press("Enter")
-                                except:
-                                    page.keyboard.press("Enter")
-                                    
+                            # Clica no botão "+ Adicionar" da seção Etiquetas
+                            btn_add_tag = page.locator('button:has-text("+ Adicionar"), button:has-text("Adicionar")').first
+                            if btn_add_tag.is_visible(timeout=4000):
+                                btn_add_tag.click(force=True)
                                 page.wait_for_timeout(1000)
-                                print("    --> Etiqueta '[Atendimento] Dúvida' enviada.")
+                                
+                                # Localiza o campo de busca com ícone de lupa dentro do balão popover
+                                campo_busca_tag = page.locator('input[placeholder*="Busca"], input[placeholder*="busca" i]').first
+                                campo_busca_tag.wait_for(state="visible", timeout=3000)
+                                campo_busca_tag.focus()
+                                campo_busca_tag.fill("")
+                                campo_busca_tag.press_sequentially("[Atendimento] Dúvida", delay=80)
+                                page.wait_for_timeout(1500)
+
+                                # Procura a opção correspondente gerada na lista do dropdown e clica
+                                tag_item = page.locator('div, li, span').filter(has_text="[Atendimento] Dúvida").first
+                                if tag_item.is_visible(timeout=3000):
+                                    tag_item.click(force=True)
+                                    print("    --> Clique efetuado no item da etiqueta do dropdown!")
+                                else:
+                                    page.keyboard.press("Enter")
+                                    print("    --> Pressionado Enter para confirmar etiqueta.")
+                                    
+                                page.wait_for_timeout(1500)
                         except Exception as e_tag:
                             print(f"    --> Aviso na tag: {e_tag}")
 
-                        # 2. APLICAR NOTA INTERNA
+                        # 2. APLICAR NOTA INTERNA (Ícone + na seção Notas do Perfil)
                         try:
                             btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
                             if btn_nota.is_visible(timeout=4000):
