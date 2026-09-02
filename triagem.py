@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import google.generativeai as genai
 from playwright.sync_api import sync_playwright
 
@@ -77,36 +78,53 @@ def rodar_triagem():
 
                 if "CLASSIFICACAO: DUVIDA" in analise:
                     sugestao = analise.split("SUGESTAO:")[-1].strip()
-                    print("--> Ação: É Dúvida! Movendo para Atendimento Humano...")
+                    print("--> Ação: É Dúvida! Processando...")
 
-                    # 1. Aplica a etiqueta [Atendimento] Dúvida
-                    btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"]').first
-                    if btn_tag.is_visible():
-                        btn_tag.click()
-                        page.fill('input[placeholder*="Buscar etiqueta"]', '[Atendimento] Dúvida')
-                        page.keyboard.press("Enter")
+                    # 1. Atribuição de Etiqueta com fallback
+                    try:
+                        btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"]').first
+                        if btn_tag.is_visible(timeout=4000):
+                            btn_tag.click()
+                            page.wait_for_timeout(1000)
+                            input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"]').first
+                            input_tag.fill("[Atendimento] Dúvida")
+                            page.wait_for_timeout(1000)
+                            page.keyboard.press("Enter")
+                            page.wait_for_timeout(1000)
+                    except Exception as e_tag:
+                        print(f"Aviso na tag (Certifique-se de que '[Atendimento] Dúvida' foi criada no painel): {e_tag}")
 
-                    # 2. Deixa a Nota Interna Amarela com a sugestão de resposta do Gemini
-                    btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
-                    if btn_nota.is_visible():
-                        btn_nota.click()
-                        campo_nota = page.locator('textarea, [contenteditable="true"]').first
-                        campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
-                        page.click('button:has-text("Salvar Nota"), button:has-text("Adicionar")')
+                    # 2. Inserção de Nota Interna Amarela
+                    try:
+                        btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
+                        if btn_nota.is_visible(timeout=4000):
+                            btn_nota.click()
+                            campo_nota = page.locator('textarea, [contenteditable="true"]').first
+                            campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
+                            page.click('button:has-text("Salvar"), button:has-text("Adicionar")')
+                            page.wait_for_timeout(1000)
+                    except Exception as e_nota:
+                        print(f"Aviso ao salvar nota: {e_nota}")
 
-                    # 3. Muda para Atendimento Humano
-                    btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
-                    if btn_humano.is_visible():
-                        btn_humano.click()
+                    # 3. Transição para Atendimento Humano
+                    try:
+                        btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
+                        if btn_humano.is_visible(timeout=4000):
+                            btn_humano.click()
+                    except Exception as e_humano:
+                        print(f"Aviso ao mover para humano: {e_humano}")
 
                 elif "CLASSIFICACAO: NEUTRO" in analise or "CLASSIFICACAO: SAIR" in analise:
                     print("--> Ação: Mensagem genérica/emoji. Arquivando conversa...")
-                    btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
-                    if btn_fechar.is_visible():
-                        btn_fechar.click()
+                    try:
+                        btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
+                        if btn_fechar.is_visible(timeout=4000):
+                            btn_fechar.click()
+                    except Exception as e_close:
+                        print(f"Aviso ao arquivar: {e_close}")
 
         except Exception as e:
-            print(f"Erro durante a execução: {e}")
+            print(f"Erro durante a execução principal: {e}")
         finally:
             browser.close()
 
