@@ -69,7 +69,6 @@ def rodar_triagem():
         
         page = context.new_page()
         
-        # Injeta propriedades via JS nativo para burlar detecções anti-bot
         page.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
@@ -79,20 +78,16 @@ def rodar_triagem():
         try:
             print("1. Acessando a área do BotConversa...")
             page.goto("https://app.botconversa.com.br/chat", wait_until="commit", timeout=60000)
-            page.wait_for_timeout(5000)
-
-            print(f"   URL atual: {page.url}")
+            page.wait_for_timeout(4000)
 
             target_page = page
             inputs = page.locator('input').all()
             
             if len(inputs) == 0:
-                print("   Buscando formulários dentro de frames secundários...")
                 for frame in page.frames:
                     if len(frame.locator('input').all()) > 0:
                         target_page = frame
                         inputs = frame.locator('input').all()
-                        print(f"   Formulário encontrado no Frame: {frame.url}")
                         break
 
             print(f"   Inputs detectados: {len(inputs)}. Preenchendo credenciais...")
@@ -106,88 +101,117 @@ def rodar_triagem():
             btn_submit = target_page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
 
-            print("2. Login enviado. Aguardando a caixa de entrada carregar...")
-            page.wait_for_timeout(8000)
+            print("2. Login enviado. Aguardando processamento...")
+            page.wait_for_timeout(10000)
 
-            if "chat" not in page.url:
+            # Se houver tela de seleção de empresa/organização, clica no primeiro item
+            try:
+                empresa = page.locator('.company-item, .select-org, [data-testid="org-item"]').first
+                if empresa.is_visible(timeout=3000):
+                    empresa.click()
+                    page.wait_for_timeout(5000)
+            except:
+                pass
+
+            # Garante que está na rota do Chat
+            if "/chat" not in page.url:
                 page.goto("https://app.botconversa.com.br/chat", wait_until="domcontentloaded", timeout=60000)
-                page.wait_for_timeout(5000)
+                page.wait_for_timeout(8000)
 
-            conversas = page.locator('.chat-item, .conversation-item, [data-testid="chat-list-item"]').all()
+            # Garante clique nas abas para renderizar os itens
+            try:
+                page.locator('text="Todas", text="Abertas", text="Não lidas"').first.click(timeout=3000)
+                page.wait_for_timeout(3000)
+            except:
+                pass
+
+            # Seletores abrangentes para a lista de conversas na sidebar
+            seletor_conversas = '.chat-item, .conversation-item, [data-testid="chat-list-item"], div[class*="chat"], div[class*="conversation"], a[href*="/chat/"]'
+            
+            # Aguarda pelo menos um elemento da lista aparecer
+            try:
+                page.wait_for_selector(seletor_conversas, timeout=15000)
+            except:
+                print("   Aviso: Tempo esgotado aguardando o seletor padrão. Tentando mapear itens dinamicamente...")
+
+            conversas = page.locator(seletor_conversas).all()
             print(f"Encontradas {len(conversas)} conversas para análise.")
 
             for index, conversa in enumerate(conversas[:15]):
-                conversa.click()
-                page.wait_for_timeout(2000)
+                try:
+                    conversa.click(force=True)
+                    page.wait_for_timeout(2500)
 
-                msgs = page.locator('.message-in, .received, [data-outgoing="false"]').all()
-                if not msgs:
-                    continue
-                
-                texto_cliente = msgs[-1].text_content().strip()
-                print(f"\n--- Conversa {index+1} ---")
-                print(f"Texto do Cliente: '{texto_cliente}'")
+                    msgs = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
+                    if not msgs:
+                        continue
+                    
+                    texto_cliente = msgs[-1].text_content().strip()
+                    print(f"\n--- Conversa {index+1} ---")
+                    print(f"Texto do Cliente: '{texto_cliente}'")
 
-                analise_raw = analisar_mensagem(texto_cliente)
-                analise_norm = normalizar_texto(analise_raw)
-                print(f"Resultado Gemini:\n{analise_raw}")
+                    analise_raw = analisar_mensagem(texto_cliente)
+                    analise_norm = normalizar_texto(analise_raw)
+                    print(f"Resultado Gemini:\n{analise_raw}")
 
-                if "DUVIDA" in analise_norm and "CLASSIFICACAO:" in analise_norm:
-                    sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
-                    print("--> Ação: Dúvida identificada! Aplicando ações...")
+                    if "DUVIDA" in analise_norm and "CLASSIFICACAO:" in analise_norm:
+                        sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
+                        print("--> Ação: Dúvida identificada! Aplicando ações...")
 
-                    # 1. Etiqueta
-                    try:
-                        btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
-                        if btn_tag.is_visible(timeout=4000):
-                            btn_tag.click()
-                            page.wait_for_timeout(1000)
-                            
-                            input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"]').first
-                            input_tag.fill("[Atendimento] Dúvida")
-                            page.wait_for_timeout(1500)
-                            
-                            try:
-                                page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida")').first.click(timeout=2000)
-                            except:
-                                page.keyboard.press("Enter")
+                        # 1. Etiqueta
+                        try:
+                            btn_tag = page.locator('button:has-text("Etiqueta"), .btn-tag, [data-testid="add-tag"], i.fa-tag, svg.feather-tag').first
+                            if btn_tag.is_visible(timeout=4000):
+                                btn_tag.click()
+                                page.wait_for_timeout(1000)
                                 
-                            page.wait_for_timeout(1000)
-                            print("    --> Etiqueta '[Atendimento] Dúvida' adicionada.")
-                    except Exception as e_tag:
-                        print(f"    --> Aviso na tag: {e_tag}")
+                                input_tag = page.locator('input[placeholder*="Buscar"], input[placeholder*="etiqueta"], input[placeholder*="Tag"]').first
+                                input_tag.fill("[Atendimento] Dúvida")
+                                page.wait_for_timeout(1500)
+                                
+                                try:
+                                    page.locator('.tag-item, .dropdown-item, li:has-text("[Atendimento] Dúvida")').first.click(timeout=2000)
+                                except:
+                                    page.keyboard.press("Enter")
+                                    
+                                page.wait_for_timeout(1000)
+                                print("    --> Etiqueta '[Atendimento] Dúvida' adicionada.")
+                        except Exception as e_tag:
+                            print(f"    --> Aviso na tag: {e_tag}")
 
-                    # 2. Nota Interna
-                    try:
-                        btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
-                        if btn_nota.is_visible(timeout=4000):
-                            btn_nota.click()
-                            campo_nota = page.locator('textarea, [contenteditable="true"]').first
-                            campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
-                            page.click('button:has-text("Salvar"), button:has-text("Adicionar")')
-                            page.wait_for_timeout(1000)
-                            print("    --> Nota interna salva.")
-                    except Exception as e_nota:
-                        print(f"    --> Aviso na nota: {e_nota}")
+                        # 2. Nota Interna
+                        try:
+                            btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
+                            if btn_nota.is_visible(timeout=4000):
+                                btn_nota.click()
+                                campo_nota = page.locator('textarea, [contenteditable="true"]').first
+                                campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}")
+                                page.click('button:has-text("Salvar"), button:has-text("Adicionar")')
+                                page.wait_for_timeout(1000)
+                                print("    --> Nota interna salva.")
+                        except Exception as e_nota:
+                            print(f"    --> Aviso na nota: {e_nota}")
 
-                    # 3. Mover para Atendimento Humano
-                    try:
-                        btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
-                        if btn_humano.is_visible(timeout=4000):
-                            btn_humano.click()
-                            print("    --> Movido para Atendimento Humano.")
-                    except Exception as e_humano:
-                        print(f"    --> Aviso no atendimento humano: {e_humano}")
+                        # 3. Mover para Atendimento Humano
+                        try:
+                            btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
+                            if btn_humano.is_visible(timeout=4000):
+                                btn_humano.click()
+                                print("    --> Movido para Atendimento Humano.")
+                        except Exception as e_humano:
+                            print(f"    --> Aviso no atendimento humano: {e_humano}")
 
-                elif "NEUTRO" in analise_norm or "SAIR" in analise_norm:
-                    print("--> Ação: Mensagem irrelevante. Arquivando conversa...")
-                    try:
-                        btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
-                        if btn_fechar.is_visible(timeout=4000):
-                            btn_fechar.click()
-                            print("    --> Conversa arquivada.")
-                    except Exception as e_close:
-                        print(f"    --> Aviso ao arquivar: {e_close}")
+                    elif "NEUTRO" in analise_norm or "SAIR" in analise_norm:
+                        print("--> Ação: Mensagem irrelevante. Arquivando conversa...")
+                        try:
+                            btn_fechar = page.locator('button:has-text("Resolver"), button:has-text("Arquivar"), [data-testid="resolve-chat"]').first
+                            if btn_fechar.is_visible(timeout=4000):
+                                btn_fechar.click()
+                                print("    --> Conversa arquivada.")
+                        except Exception as e_close:
+                            print(f"    --> Aviso ao arquivar: {e_close}")
+                except Exception as e_item:
+                    print(f"    --> Erro ao processar conversa {index+1}: {e_item}")
 
         except Exception as e:
             print(f"Erro durante a execução principal: {e}")
