@@ -24,18 +24,25 @@ def normalizar_texto(texto):
         if unicodedata.category(c) != 'Mn'
     ).upper()
 
-def analisar_mensagem(texto):
+def analisar_com_gemini(texto_conversa, tem_audio_ou_midia=False):
     prompt = f"""
-    Você é um triador de mensagens de atendimento via WhatsApp de uma loja.
-    Analise a mensagem enviada pelo CLIENTE e responda ESTRITAMENTE no seguinte formato:
-
-    CLASSIFICACAO: <DUVIDA ou NEUTRO>
+    Você é um assistente de triagem de atendimento ao cliente via WhatsApp.
+    Sua missão é determinar se a conversa precisa de ATENDIMENTO HUMANO / RESPOSTA A DÚVIDA.
 
     Regras de Classificação:
-    - DUVIDA: O cliente perguntou sobre preço, valores, catálogo, fotos, frete, entrega, localização, disponibilidade ou fez uma pergunta/dúvida de atendimento (ex: 'enviou uma pergunta', 'qual o valor da mesa', 'quero saber o preço').
-    - NEUTRO: Apenas emojis, saudações curtas ('oi', 'tudo bem'), 'ok', 'obrigado', mensagens automáticas do sistema ou disparos.
+    - Responda DUVIDA se o cliente:
+      * Enviou uma dúvida, pergunta sobre preço, valores, fotos, catálogo, produto, frete, localização, etc.
+      * Enviou um áudio, imagem ou documento solicitando suporte/atendimento.
+      * Expressou intenção de compra ou pediu ajuda.
+    - Responda NEUTRO apenas se:
+      * For estritamente uma mensagem automática do próprio sistema/bot.
+      * For apenas uma confirmação simples encerrada sem pendências (ex: "ok", "obrigado").
 
-    Mensagem enviada pelo cliente: "{texto}"
+    Presença de Áudio/Mídia enviado pelo cliente: {"SIM" if tem_audio_ou_midia else "NÃO"}
+    Texto das mensagens recentes do cliente: "{texto_conversa}"
+
+    Responda ESTRITAMENTE em uma única linha no formato:
+    CLASSIFICACAO: <DUVIDA ou NEUTRO>
     """
     try:
         response = client.models.generate_content(
@@ -45,7 +52,8 @@ def analisar_mensagem(texto):
         return response.text
     except Exception as e:
         print(f"Erro na API do Gemini: {e}")
-        return "CLASSIFICACAO: NEUTRO"
+        # Se contiver áudio/mídia ou texto relevante, em caso de erro na IA define como dúvida por segurança
+        return "CLASSIFICACAO: DUVIDA" if (tem_audio_ou_midia or len(texto_conversa) > 5) else "CLASSIFICACAO: NEUTRO"
 
 def rodar_triagem():
     with sync_playwright() as p:
@@ -75,7 +83,8 @@ def rodar_triagem():
             campo_email.fill(BOT_EMAIL, force=True)
 
             campo_senha = page.locator('input[type="password"], input[name="password"]').first
-            campo_senha.fill(BOT_SENHA, force=True)
+            senha = BOT_SENHA
+            campo_senha.fill(senha, force=True)
 
             btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
@@ -85,42 +94,45 @@ def rodar_triagem():
             page.goto("https://app.botconversa.com.br/69991/live-chat", wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(6000)
 
+            # Seleciona as conversas da coluna esquerda
             chats = page.locator('div[role="button"], div.chat-item, div:has-text("O Cliente")').all()
-            print(f"Encontradas {len(chats)} conversas na lista.")
+            print(f"Total de conversas localizadas na lista: {len(chats)}")
 
             for index, chat in enumerate(chats[:15]):
                 try:
                     if not chat.is_visible():
                         continue
 
-                    print(f"\n--- Processando Conversa {index + 1} ---")
+                    print(f"\n--- Processando Conversa #{index + 1} ---")
                     chat.click(force=True)
                     page.wait_for_timeout(2500)
 
-                    # Obtém textos recebidos do cliente na janela de chat
-                    mensagens = page.locator('div:has-text("enviou uma pergunta"), div.message-received, div[data-message]').all_inner_texts()
-                    texto_cliente = " ".join(mensagens).strip()
+                    # 1. Verifica se há áudio/mídia na janela do chat
+                    tem_audio_midia = False
+                    elementos_midia = page.locator('audio, video, [data-icon*="mic"], [class*="audio"], [class*="media"], svg path[d*="M12"]').all()
+                    if len(elementos_midia) > 0:
+                        tem_audio_midia = True
+                        print("   [!] Elemento de Áudio/Mídia identificado na conversa!")
 
-                    if not texto_cliente:
-                        # Fallback buscando bolhas da conversa
-                        todas_msgs = page.locator('div[class*="bubble"], div[class*="message"]').all_inner_texts()
-                        texto_cliente = " ".join(todas_msgs).strip()
+                    # 2. Captura textos das mensagens do chat
+                    mensagens_el = page.locator('div[class*="received"], div[class*="bubble"], div[data-message]').all_inner_texts()
+                    texto_cliente = " ".join(mensagens_el).strip()
 
-                    if not texto_cliente:
-                        print("   --> Nenhuma mensagem encontrada nesta conversa.")
-                        continue
+                    if not texto_cliente and not tem_audio_midia:
+                        # Tenta capturar qualquer texto dentro da área central de mensagens
+                        texto_cliente = page.locator('div.chat-body, div.messages-container').inner_text()
 
-                    print(f"   Texto Capturado: '{texto_cliente[:100]}...'")
+                    print(f"   Texto Capturado: '{texto_cliente[:120]}...' | Mídia/Áudio Presente: {tem_audio_midia}")
 
-                    # Análise Gemini
-                    analise_raw = analisar_mensagem(texto_cliente)
+                    # 3. Análise no Gemini
+                    analise_raw = analisar_com_gemini(texto_cliente, tem_audio_ou_midia=tem_audio_midia)
                     analise_norm = normalizar_texto(analise_raw)
                     print(f"   Resultado Gemini: {analise_raw.strip()}")
 
-                    if "DUVIDA" in analise_norm:
-                        print("   --> Ação: Dúvida identificada! Aplicando etiqueta...")
+                    if "DUVIDA" in analise_norm or tem_audio_midia:
+                        print("   --> Ação: DUVIDA identificada! Aplicando etiqueta no perfil...")
 
-                        # Passo A: Clica no nome/perfil para abrir a lateral (conforme mostrado no vídeo)
+                        # Passo A: Clica na área de perfil para garantir que a lateral está aberta
                         try:
                             header_chat = page.locator('header, div.chat-header, div:has-text("Perfil")').first
                             if header_chat.is_visible():
@@ -129,7 +141,7 @@ def rodar_triagem():
                         except Exception:
                             pass
 
-                        # Passo B: Clica no botão "+ Adicionar" em Etiquetas
+                        # Passo B: Clica em "+ Adicionar" na seção de etiquetas
                         btn_add = page.locator('button:has-text("+ Adicionar"), div:has-text("+ Adicionar")').first
                         btn_add.wait_for(state="visible", timeout=5000)
                         btn_add.click(force=True)
@@ -149,14 +161,14 @@ def rodar_triagem():
                             opcao_etiqueta.click(force=True)
                             print("   --> SUCESSO: Etiqueta '[Atendimento] Dúvida' aplicada com sucesso!")
                         else:
-                            print("   --> AVISO: Etiqueta não visível ou já aplicada.")
+                            print("   --> AVISO: Etiqueta não visível no menu ou já aplicada.")
 
                         page.wait_for_timeout(2000)
                     else:
-                        print("   --> Ação: Mensagem classificada como neutra.")
+                        print("   --> Ação: Conversa classificada como NEUTRO.")
 
                 except Exception as e_chat:
-                    print(f"   --> Aviso na conversa {index + 1}: {e_chat}")
+                    print(f"   --> Aviso na conversa #{index + 1}: {e_chat}")
 
         except Exception as e:
             print(f"Erro principal na triagem: {e}")
