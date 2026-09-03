@@ -11,7 +11,7 @@ BOT_EMAIL = os.environ.get("BOT_EMAIL")
 BOT_SENHA = os.environ.get("BOT_SENHA")
 
 if not GEMINI_KEY or not BOT_EMAIL or not BOT_SENHA:
-    print("ERRO: Credenciais BOT_EMAIL, BOT_SENHA ou GEMINI_API_KEY não encontradas nas Secrets.")
+    print("ERRO: Credenciais BOT_EMAIL, BOT_SENHA ou GEMINI_API_KEY ausentes nas Secrets.")
     sys.exit(1)
 
 client = genai.Client(api_key=GEMINI_KEY)
@@ -40,7 +40,6 @@ def analisar_com_gemini(texto_conversa, tem_audio_ou_midia=False):
     CLASSIFICACAO: <DUVIDA ou NEUTRO>
     """
     try:
-        # Atualizado para o modelo suportado na API pública
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
@@ -48,7 +47,6 @@ def analisar_com_gemini(texto_conversa, tem_audio_ou_midia=False):
         return response.text
     except Exception as e:
         print(f"Aviso API Gemini: {e}")
-        # Se contiver áudio ou mídia, assume DUVIDA para não perder o atendimento
         return "CLASSIFICACAO: DUVIDA" if (tem_audio_ou_midia or len(texto_conversa) > 5) else "CLASSIFICACAO: NEUTRO"
 
 def rodar_triagem():
@@ -101,7 +99,7 @@ def rodar_triagem():
                     chat.click(force=True)
                     page.wait_for_timeout(2000)
 
-                    # 1. Verifica presença de áudio/mídia sem dar timeout
+                    # 1. Verifica presença de áudio/mídia
                     tem_audio_midia = False
                     try:
                         elementos_midia = page.locator('audio, video, [data-icon*="mic"], [class*="audio"]').all()
@@ -111,7 +109,7 @@ def rodar_triagem():
                     except Exception:
                         pass
 
-                    # 2. Captura textos sem timeout alto (usando timeout de 2000ms)
+                    # 2. Captura textos da conversa
                     texto_cliente = ""
                     try:
                         mensagens_el = page.locator('div[class*="received"], div[class*="bubble"]').all_inner_texts()
@@ -121,71 +119,58 @@ def rodar_triagem():
 
                     print(f"   Texto Capturado: '{texto_cliente[:100]}...' | Mídia: {tem_audio_midia}")
 
-                    # 3. Classificação com a IA Gemini
+                    # 3. Classificação Gemini
                     analise_raw = analisar_com_gemini(texto_cliente, tem_audio_ou_midia=tem_audio_midia)
                     analise_norm = normalizar_texto(analise_raw)
                     print(f"   Resultado Gemini: {analise_raw.strip()}")
 
                     if "DUVIDA" in analise_norm or tem_audio_midia:
-                        print("   --> Ação: DUVIDA identificada! Abrindo painel e aplicando etiqueta...")
+                        print("   --> Ação: DUVIDA identificada! Executando sequência de cliques exatamente como no vídeo...")
 
-                        # Passo A: Clica no topo do chat / ícone de perfil à direita para exibir as etiquetas
-                        page.evaluate("""
-                            () => {
-                                let el = document.querySelector('header') || document.querySelector('.chat-header') || document.querySelector('div[class*="header"]');
-                                if (el) el.click();
-                            }
-                        """)
-                        page.wait_for_timeout(1500)
-
-                        # Passo B: Clica no botão "+ Adicionar" (com fallback JS caso o seletor visual mude)
-                        clicado_add = False
+                        # Passo 1: Clicar no Nome / Avatar do cliente no topo da janela do chat ativo (Abre o Perfil)
                         try:
-                            btn_add = page.locator('button:has-text("Adicionar"), button:has-text("+ Adicionar"), div:has-text("+ Adicionar")').first
-                            if btn_add.is_visible(timeout=3000):
-                                btn_add.click(force=True)
-                                clicado_add = True
-                        except Exception:
-                            pass
-
-                        if not clicado_add:
-                            clicado_add = page.evaluate("""
-                                () => {
-                                    let elementos = Array.from(document.querySelectorAll('button, div, span'));
-                                    let alvo = elementos.find(e => e.innerText && e.innerText.includes('Adicionar'));
-                                    if (alvo) { alvo.click(); return true; }
-                                    return false;
-                                }
-                            """)
+                            avatar_cliente = page.locator('header img, header div[role="button"], div.chat-header span').first
+                            if avatar_cliente.is_visible(timeout=3000):
+                                avatar_cliente.click(force=True)
+                                print("   --> [Passo 1] Clique no Perfil/Avatar do cliente realizado!")
+                        except Exception as e_avatar:
+                            print(f"   --> AVISO no Passo 1: {e_avatar}")
 
                         page.wait_for_timeout(1500)
 
-                        # Passo C: Pesquisa "atendimento dúvida"
-                        campo_busca = page.locator('input[placeholder*="Pesquisar"], input[placeholder*="Buscar"], input[type="text"]').last
-                        if campo_busca.is_visible(timeout=3000):
-                            campo_busca.fill("atendimento dúvida")
-                            page.wait_for_timeout(1200)
+                        # Passo 2: Clicar no botão "+ Adicionar" na seção de etiquetas
+                        btn_add = page.locator('button:has-text("+ Adicionar"), div:has-text("+ Adicionar"), span:has-text("+ Adicionar")').first
+                        btn_add.wait_for(state="visible", timeout=5000)
+                        btn_add.click(force=True)
+                        print("   --> [Passo 2] Botão '+ Adicionar' clicado!")
+                        page.wait_for_timeout(1000)
 
-                        # Passo D: Seleciona e clica na etiqueta [Atendimento] Dúvida
+                        # Passo 3: Digitar "atendimento dúvida" caractere por caractere
+                        campo_busca = page.locator('input[placeholder*="Pesquisar"], input[placeholder*="Buscar"], input[type="text"]').last
+                        campo_busca.wait_for(state="visible", timeout=5000)
+                        campo_busca.click(force=True)
+                        
+                        # Simula a digitação com intervalo humano
+                        campo_busca.press_sequentially("atendimento dúvida", delay=100)
+                        page.wait_for_timeout(1500)
+
+                        # Passo 4: Clicar no item da lista ou pressionar a tecla Enter
                         opcao_etiqueta = page.locator('div, span, li').filter(has_text="[Atendimento] Dúvida").first
                         if not opcao_etiqueta.is_visible(timeout=2000):
                             opcao_etiqueta = page.locator('div, span, li').filter(has_text="atendimento dúvida").first
 
                         if opcao_etiqueta.is_visible(timeout=3000):
                             opcao_etiqueta.click(force=True)
-                            print("   --> SUCESSO: Etiqueta '[Atendimento] Dúvida' aplicada com sucesso!")
+                            print("   --> [Passo 4] Clique direto na opção '[Atendimento] Dúvida' efetuado!")
                         else:
-                            # Tentativa direta via DOM
-                            page.evaluate("""
-                                () => {
-                                    let itens = Array.from(document.querySelectorAll('div, span, li'));
-                                    let item = itens.find(e => e.innerText && e.innerText.includes('Dúvida'));
-                                    if (item) item.click();
-                                }
-                            """)
-                            print("   --> Comando de seleção da etiqueta executado no DOM.")
+                            # Se a opção não receber o clique do mouse, confirma via Teclado (Seta para baixo + Enter)
+                            print("   --> [Passo 4] Confirmando seleção da etiqueta via Tecla Enter do teclado...")
+                            page.keyboard.press("ArrowDown")
+                            page.wait_for_timeout(500)
+                            page.keyboard.press("Enter")
 
-                        page.wait_for_timeout(2000)
+                        page.wait_for_timeout(2500)
+                        print("   --> SUCESSO: Sequência de etiquetagem concluída com sucesso!")
                     else:
                         print("   --> Ação: Conversa classificada como NEUTRO.")
 
