@@ -95,64 +95,66 @@ def executar_bot(acao, regra_dias="seg_a_sab", forcar=False, hora_inicio="08", h
 
             print("4. Navegando para Transmissões Agendadas...")
             page.goto("https://app.botconversa.com.br/69991/broadcast/scheduled", wait_until="networkidle", timeout=60000)
-            page.wait_for_timeout(6000)
+            page.wait_for_timeout(8000) # Aguarda renderização total do Bundle React
 
             if acao == "start":
-                print("5. Executando CLIQUE REAL NO BOTÃO VERDE DE PLAY...")
-                
-                # Mapeia especificamente a penúltima coluna da primeira linha de dados da tabela (onde fica o botão verde)
-                seletor_play = 'table tbody tr:first-child td:nth-last-child(2) *, table tbody tr:first-child td:last-child *, div[role="row"]:first-child button, svg[data-icon="play"]'
-                
-                # Tenta clicar com o ratão (mouse) no elemento do botão
-                btn = page.locator(seletor_play).first
-                if btn.is_visible(timeout=5000):
-                    btn.click(force=True)
-                    print("   --> Clique normal do mouse disparado!")
+                print("5. Procurando botão de Play pelo SVG verde (#54C21F)...")
+
+                # Localizador focado no path/circle verde ou na estrutura SVG fornecida
+                play_selector = page.locator('//*[name()="svg"]/*[name()="circle" and @fill="#54C21F"]/.. | //*[name()="svg"]/*[name()="path" and @fill="#54C21F"]/..').first
+
+                if play_selector.is_visible(timeout=5000):
+                    play_selector.click(force=True)
+                    print("--> SUCESSO: Clique direto no SVG verde realizado!")
                 else:
-                    # Se não visível diretamente pelo selector css, força um dispatchEvent de clique via JavaScript
-                    print("   --> Executando clique forçado via script do navegador...")
-                    page.evaluate("""
-                        let elemento = document.querySelector('table tbody tr td:nth-last-child(2)') || document.querySelector('svg[data-icon="play"]');
-                        if (elemento) {
-                            elemento.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    # Injeção nativa via script executado no DOM para garantir o clique no componente do React
+                    print("--> Buscando SVG via injeção JavaScript DOM...")
+                    clicado = page.evaluate("""
+                        () => {
+                            const svgs = Array.from(document.querySelectorAll('svg'));
+                            const target = svgs.find(s => s.outerHTML.includes('#54C21F') || s.outerHTML.includes('clip0_6756'));
+                            if (target) {
+                                const clickable = target.closest('button') || target.closest('div') || target;
+                                clickable.click();
+                                return true;
+                            }
+                            return false;
                         }
                     """)
+                    if clicado:
+                        print("--> SUCESSO: Clique via script injetado no SVG verde executado!")
+                    else:
+                        print("--> AVISO: Elemento SVG verde não encontrado na página. A transmissão já pode estar em andamento.")
 
                 page.wait_for_timeout(2000)
-                
-                # Confirma caso a plataforma abra modal ao clicar no Play
+
+                # Confirma se abriu modal ao iniciar
                 btn_confirmar_play = page.locator('button:has-text("Sim"), button:has-text("Iniciar"), button:has-text("Continuar")').last
                 if btn_confirmar_play.is_visible(timeout=3000):
                     btn_confirmar_play.click(force=True)
-                    print("--> SUCESSO: Modal confirmado! Transmissão em andamento.")
-                else:
-                    print("--> SUCESSO: Play acionado diretamente na transmissão!")
+                    print("--> SUCESSO: Modal de início confirmado!")
 
             elif acao == "stop":
-                print("5. Executando CLIQUE NO BOTÃO LARANJA DE PAUSE...")
-                
-                seletor_pause = 'table tbody tr:first-child td:nth-last-child(2) *, svg[data-icon="pause"]'
-                btn_p = page.locator(seletor_pause).first
-                
-                if btn_p.is_visible(timeout=5000):
-                    btn_p.click(force=True)
-                else:
-                    page.evaluate("""
-                        let elemento = document.querySelector('table tbody tr td:nth-last-child(2)') || document.querySelector('svg[data-icon="pause"]');
-                        if (elemento) {
-                            elemento.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                print("5. Localizando botão de Pause...")
+                clicado = page.evaluate("""
+                    () => {
+                        const svgs = Array.from(document.querySelectorAll('svg'));
+                        const target = svgs.find(s => !s.outerHTML.includes('#54C21F') && (s.outerHTML.includes('pause') || s.closest('td')));
+                        if (target) {
+                            const clickable = target.closest('button') || target.closest('div') || target;
+                            clickable.click();
+                            return true;
                         }
-                    """)
+                        return false;
+                    }
+                """)
                 
                 page.wait_for_timeout(2000)
 
-                # Clica no botão vermelho do modal de confirmação
                 btn_confirmar_stop = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
                 if btn_confirmar_stop.is_visible(timeout=5000):
                     btn_confirmar_stop.click(force=True)
                     print("--> SUCESSO: Modal de pausa confirmado!")
-                else:
-                    print("--> SUCESSO: Comando de pausa enviado!")
 
             page.wait_for_timeout(4000)
 
