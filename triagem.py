@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import unicodedata
+import traceback
 from google import genai
 from playwright.sync_api import sync_playwright
 
@@ -10,7 +11,7 @@ BOT_EMAIL = os.environ.get("BOT_EMAIL")
 BOT_SENHA = os.environ.get("BOT_SENHA")
 
 if not GEMINI_KEY or not BOT_EMAIL or not BOT_SENHA:
-    print("ERRO: Faltam credenciais nas Secrets (GEMINI_API_KEY, BOT_EMAIL, BOT_SENHA).")
+    print("ERRO: Credenciais BOT_EMAIL, BOT_SENHA ou GEMINI_API_KEY não encontradas nas Secrets.")
     sys.exit(1)
 
 client = genai.Client(api_key=GEMINI_KEY)
@@ -25,16 +26,14 @@ def normalizar_texto(texto):
 
 def analisar_mensagem(texto):
     prompt = f"""
-    Você é um triador de mensagens no WhatsApp de uma loja de móveis/atendimento.
-    Analise a mensagem do CLIENTE e responda ESTRITAMENTE no seguinte formato:
+    Você é um triador de mensagens de atendimento via WhatsApp de uma loja.
+    Analise a mensagem enviada pelo CLIENTE e responda ESTRITAMENTE no seguinte formato:
 
-    CLASSIFICACAO: <DUVIDA ou NEUTRO ou SAIR>
-    SUGESTAO: <Sugestão de resposta curta se for DUVIDA, ou 'N/A' se for NEUTRO/SAIR>
+    CLASSIFICACAO: <DUVIDA ou NEUTRO>
 
     Regras de Classificação:
-    - DUVIDA: O cliente perguntou sobre preço, valores, tamanho, catálogo, fotos, frete, prazo de entrega, localização da loja ou tirou dúvidas de móveis/produtos (ex: 'quero saber o preço de mesa').
-    - NEUTRO: Apenas emojis, saudações curtas ('oi', 'tudo bem'), figurinhas, 'ok', 'obrigado', mensagens de confirmação automática do sistema ou disparos.
-    - SAIR: Pediu para cancelar, parar de mandar mensagem, xingou ou disse 'sair'.
+    - DUVIDA: O cliente perguntou sobre preço, valores, catálogo, fotos, frete, entrega, localização, disponibilidade ou fez uma pergunta/dúvida de atendimento (ex: 'enviou uma pergunta', 'qual o valor da mesa', 'quero saber o preço').
+    - NEUTRO: Apenas emojis, saudações curtas ('oi', 'tudo bem'), 'ok', 'obrigado', mensagens automáticas do sistema ou disparos.
 
     Mensagem enviada pelo cliente: "{texto}"
     """
@@ -46,7 +45,7 @@ def analisar_mensagem(texto):
         return response.text
     except Exception as e:
         print(f"Erro na API do Gemini: {e}")
-        return "CLASSIFICACAO: NEUTRO\nSUGESTAO: N/A"
+        return "CLASSIFICACAO: NEUTRO"
 
 def rodar_triagem():
     with sync_playwright() as p:
@@ -57,7 +56,6 @@ def rodar_triagem():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-infobars",
-                "--ignore-certificate-errors",
                 "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
             ]
         )
@@ -66,21 +64,14 @@ def rodar_triagem():
             locale="pt-BR",
             timezone_id="America/Sao_Paulo"
         )
-        
         page = context.new_page()
-        
-        page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            Object.defineProperty(navigator, 'languages', { get: () => ['pt-BR', 'pt', 'en-US', 'en'] });
-            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-        """)
 
         try:
             print("1. Efetuando Login no BotConversa...")
             page.goto("https://app.botconversa.com.br/login", wait_until="domcontentloaded", timeout=60000)
             page.wait_for_timeout(3000)
 
-            campo_email = page.locator('input[type="email"], input[name="email"], input[placeholder*="email" i], input').first
+            campo_email = page.locator('input[type="email"], input[name="email"], input').first
             campo_email.fill(BOT_EMAIL, force=True)
 
             campo_senha = page.locator('input[type="password"], input[name="password"]').first
@@ -89,111 +80,88 @@ def rodar_triagem():
             btn_submit = page.locator('button[type="submit"], button:has-text("Entrar"), button:has-text("Login")').first
             btn_submit.click(force=True)
 
-            print("2. Login enviado. Navegando para a aba de NÃO LIDAS (unread)...")
+            print("2. Acessando a Caixa de Entrada (Inbox)...")
             page.wait_for_timeout(7000)
-
-            # Rota focada em mensagens que chegaram e não foram respondidas
-            page.goto("https://app.botconversa.com.br/69991/live-chat/unread", wait_until="networkidle", timeout=60000)
+            page.goto("https://app.botconversa.com.br/69991/live-chat", wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(6000)
 
-            seletor_conversas = 'a[href*="live-chat"], div[class*="chat"], div[class*="conversation"], [role="button"]'
-            
-            conversas = page.locator(seletor_conversas).all()
-            if len(conversas) == 0:
-                conversas = page.locator('aside div > div, div.flex-1.overflow-y-auto > div').all()
+            chats = page.locator('div[role="button"], div.chat-item, div:has-text("O Cliente")').all()
+            print(f"Encontradas {len(chats)} conversas na lista.")
 
-            print(f"Encontradas {len(conversas)} conversas não lidas para análise.")
-
-            for index, conversa in enumerate(conversas[:30]):
+            for index, chat in enumerate(chats[:15]):
                 try:
-                    conversa.click(force=True)
+                    if not chat.is_visible():
+                        continue
+
+                    print(f"\n--- Processando Conversa {index + 1} ---")
+                    chat.click(force=True)
                     page.wait_for_timeout(2500)
 
-                    # Busca especificamente mensagens RECEBIDAS do cliente (ignora bolhas do sistema)
-                    msgs_cliente = page.locator('.message-in, .received, [data-outgoing="false"], div[class*="message-in"]').all()
-                    
-                    texto_cliente = ""
-                    if msgs_cliente:
-                        # Pega a última mensagem enviada pelo cliente
-                        texto_cliente = msgs_cliente[-1].text_content().strip()
-                    else:
-                        # Fallback: pega todas as bolhas e filtra textos curtos ou do robô
-                        todas_msgs = page.locator('div[class*="bubble"], div[class*="message"]').all()
-                        if todas_msgs:
-                            texto_cliente = todas_msgs[-1].text_content().strip()
+                    # Obtém textos recebidos do cliente na janela de chat
+                    mensagens = page.locator('div:has-text("enviou uma pergunta"), div.message-received, div[data-message]').all_inner_texts()
+                    texto_cliente = " ".join(mensagens).strip()
 
                     if not texto_cliente:
-                        print(f"   [Conversa {index+1}] Nenhuma mensagem do cliente encontrada.")
-                        continue
-                    
-                    print(f"\n--- Conversa {index+1} ---")
-                    print(f"Texto do Cliente Capturado: '{texto_cliente}'")
+                        # Fallback buscando bolhas da conversa
+                        todas_msgs = page.locator('div[class*="bubble"], div[class*="message"]').all_inner_texts()
+                        texto_cliente = " ".join(todas_msgs).strip()
 
+                    if not texto_cliente:
+                        print("   --> Nenhuma mensagem encontrada nesta conversa.")
+                        continue
+
+                    print(f"   Texto Capturado: '{texto_cliente[:100]}...'")
+
+                    # Análise Gemini
                     analise_raw = analisar_mensagem(texto_cliente)
                     analise_norm = normalizar_texto(analise_raw)
-                    print(f"Resultado Gemini:\n{analise_raw}")
+                    print(f"   Resultado Gemini: {analise_raw.strip()}")
 
-                    if "DUVIDA" in analise_norm and "CLASSIFICACAO:" in analise_norm:
-                        sugestao = analise_raw.split("SUGESTAO:")[-1].strip() if "SUGESTAO:" in analise_raw else "Verifique o interesse do cliente."
-                        print("--> Ação: Dúvida identificada! Aplicando etiqueta no Perfil...")
+                    if "DUVIDA" in analise_norm:
+                        print("   --> Ação: Dúvida identificada! Aplicando etiqueta...")
 
-                        # 1. APLICAR ETIQUETA (Localiza o painel do Perfil)
+                        # Passo A: Clica no nome/perfil para abrir a lateral (conforme mostrado no vídeo)
                         try:
-                            btn_add_tag = page.locator('button:has-text("+ Adicionar"), button:has-text("Adicionar")').first
-                            if btn_add_tag.is_visible(timeout=4000):
-                                btn_add_tag.click(force=True)
+                            header_chat = page.locator('header, div.chat-header, div:has-text("Perfil")').first
+                            if header_chat.is_visible():
+                                header_chat.click(force=True)
                                 page.wait_for_timeout(1000)
-                                
-                                campo_busca_tag = page.locator('input[placeholder*="Busca"], input[placeholder*="busca" i]').first
-                                campo_busca_tag.wait_for(state="visible", timeout=3000)
-                                campo_busca_tag.focus()
-                                campo_busca_tag.fill("")
-                                campo_busca_tag.press_sequentially("[Atendimento]", delay=80)
-                                page.wait_for_timeout(1500)
+                        except Exception:
+                            pass
 
-                                item_cinza = page.locator('div, span, p').filter(has_text="[Atendimento] Dúvida").last
-                                if item_cinza.is_visible(timeout=3000):
-                                    item_cinza.click(force=True)
-                                    print("    --> Clique efetuado no card cinza '[Atendimento] Dúvida'!")
-                                else:
-                                    print("    --> Card cinza da etiqueta não foi localizado.")
-                                    
-                                page.wait_for_timeout(1500)
-                        except Exception as e_tag:
-                            print(f"    --> Aviso na etiqueta: {e_tag}")
+                        # Passo B: Clica no botão "+ Adicionar" em Etiquetas
+                        btn_add = page.locator('button:has-text("+ Adicionar"), div:has-text("+ Adicionar")').first
+                        btn_add.wait_for(state="visible", timeout=5000)
+                        btn_add.click(force=True)
+                        page.wait_for_timeout(1000)
 
-                        # 2. APLICAR NOTA INTERNA
-                        try:
-                            btn_nota = page.locator('button:has-text("Nota"), .btn-note, [data-testid="add-note"]').first
-                            if btn_nota.is_visible(timeout=4000):
-                                btn_nota.click(force=True)
-                                page.wait_for_timeout(1000)
-                                campo_nota = page.locator('textarea, [contenteditable="true"]').first
-                                campo_nota.fill(f"📌 IA Gemini: Dúvida identificada.\n💡 Sugestão: {sugestao}", force=True)
-                                page.wait_for_timeout(500)
-                                page.click('button:has-text("Salvar"), button:has-text("Adicionar")', force=True)
-                                page.wait_for_timeout(1000)
-                                print("    --> Nota interna salva.")
-                        except Exception as e_nota:
-                            print(f"    --> Aviso na nota: {e_nota}")
+                        # Passo C: Pesquisa "atendimento dúvida"
+                        campo_busca = page.locator('input[placeholder*="Pesquisar"], input[placeholder*="Buscar"], input[type="text"]').last
+                        campo_busca.fill("atendimento dúvida")
+                        page.wait_for_timeout(1200)
 
-                        # 3. MOVER PARA ATENDIMENTO HUMANO
-                        try:
-                            btn_humano = page.locator('button:has-text("Atendimento Humano"), .btn-human').first
-                            if btn_humano.is_visible(timeout=4000):
-                                btn_humano.click(force=True)
-                                print("    --> Movido para Atendimento Humano.")
-                        except Exception as e_humano:
-                            print(f"    --> Aviso no atendimento humano: {e_humano}")
+                        # Passo D: Seleciona e clica na etiqueta [Atendimento] Dúvida
+                        opcao_etiqueta = page.locator('div, span, li').filter(has_text="[Atendimento] Dúvida").first
+                        if not opcao_etiqueta.is_visible():
+                            opcao_etiqueta = page.locator('div, span, li').filter(has_text="atendimento dúvida").first
 
-                    elif "NEUTRO" in analise_norm or "SAIR" in analise_norm:
-                        print("--> Ação: Mensagem neutra/irrelevante.")
+                        if opcao_etiqueta.is_visible(timeout=4000):
+                            opcao_etiqueta.click(force=True)
+                            print("   --> SUCESSO: Etiqueta '[Atendimento] Dúvida' aplicada com sucesso!")
+                        else:
+                            print("   --> AVISO: Etiqueta não visível ou já aplicada.")
 
-                except Exception as e_item:
-                    print(f"    --> Erro na conversa {index+1}: {e_item}")
+                        page.wait_for_timeout(2000)
+                    else:
+                        print("   --> Ação: Mensagem classificada como neutra.")
+
+                except Exception as e_chat:
+                    print(f"   --> Aviso na conversa {index + 1}: {e_chat}")
 
         except Exception as e:
-            print(f"Erro durante a execução principal: {e}")
+            print(f"Erro principal na triagem: {e}")
+            traceback.print_exc()
+            sys.exit(1)
         finally:
             browser.close()
 
