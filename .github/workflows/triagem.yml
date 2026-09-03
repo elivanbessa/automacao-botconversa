@@ -2,9 +2,9 @@ name: Triagem de Caixa de Entrada (IA Gemini)
 
 on:
   schedule:
-    - cron: '*/30 * * * *'
+    - cron: '*/30 * * * *'  # Roda automaticamente a cada 30 minutos
 
-  workflow_dispatch:
+  workflow_dispatch:         # Permite rodar manualmente a qualquer momento
 
 jobs:
   triagem:
@@ -25,6 +25,7 @@ jobs:
 
       - name: Executar Triagem no BotConversa
         env:
+          TZ: "America/Sao_Paulo"
           BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
           BOT_SENHA: ${{ secrets.BOT_SENHA }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
