@@ -2,7 +2,7 @@ name: Automacao BotConversa
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '0 * * * *'  # Roda a cada hora na nuvem
 
   workflow_dispatch:
     inputs:
@@ -43,10 +43,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Baixar codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: Configurar Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.4.0
         with:
           python-version: '3.10'
 
@@ -71,5 +71,6 @@ jobs:
             python bot.py "$PARAM_ACAO" "$PARAM_DIAS" "$PARAM_FORCAR" "$PARAM_INICIO" "$PARAM_PAUSA"
           else
             echo "Execução automática via agendamento."
-            python bot.py "auto" "seg_a_sab" false "23" "08"
+            # Define o horário comercial padrão das 08h às 18h
+            python bot.py "auto" "seg_a_sab" false "08" "18"
           fi
