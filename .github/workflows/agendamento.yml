@@ -1,11 +1,9 @@
 name: Automacao BotConversa
 
 on:
-  # 1. Agendamento automático (Checa a cada hora para bater com os horários que você escolher)
   schedule:
-    - cron: '0 * * * *'  # Roda no minuto 0 de cada hora na nuvem
+    - cron: '0 * * * *'
 
-  # 2. Formulário Interativo com opções estendidas
   workflow_dispatch:
     inputs:
       acao:
@@ -22,10 +20,10 @@ on:
         default: 'seg_a_sab'
         type: choice
         options:
-          - 'seg_a_sab'           # Segunda a Sábado
-          - 'seg,ter,qua,qui,sex'  # Segunda a Sexta
-          - 'todos'                # Todos os dias (Segunda a Domingo)
-          - 'fim_de_semana'        # Sábado e Domingo
+          - 'seg_a_sab'
+          - 'seg,ter,qua,qui,sex'
+          - 'todos'
+          - 'fim_de_semana'
       horario_inicio:
         description: 'Horário de Início (Horário do Brasil - Ex: 08)'
         required: true
@@ -59,6 +57,7 @@ jobs:
 
       - name: Executar Automacao com Parametros do Formulario
         env:
+          TZ: "America/Sao_Paulo"
           BOT_EMAIL: ${{ secrets.BOT_EMAIL }}
           BOT_SENHA: ${{ secrets.BOT_SENHA }}
           PARAM_ACAO: ${{ inputs.acao }}
@@ -72,6 +71,5 @@ jobs:
             python bot.py "$PARAM_ACAO" "$PARAM_DIAS" "$PARAM_FORCAR" "$PARAM_INICIO" "$PARAM_PAUSA"
           else
             echo "Execução automática via agendamento."
-            # Horários e dias padrão para a execução automática
             python bot.py "auto" "seg_a_sab" false "08" "18"
           fi
