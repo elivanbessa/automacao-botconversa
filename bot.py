@@ -95,20 +95,18 @@ def executar_bot(acao, regra_dias="seg_a_sab", forcar=False, hora_inicio="08", h
 
             print("4. Navegando para Transmissões Agendadas...")
             page.goto("https://app.botconversa.com.br/69991/broadcast/scheduled", wait_until="networkidle", timeout=60000)
-            page.wait_for_timeout(8000) # Aguarda renderização total do Bundle React
+            page.wait_for_timeout(8000)
 
             if acao == "start":
                 print("5. Procurando botão de Play pelo SVG verde (#54C21F)...")
 
-                # Localizador focado no path/circle verde ou na estrutura SVG fornecida
-                play_selector = page.locator('//*[name()="svg"]/*[name()="circle" and @fill="#54C21F"]/.. | //*[name()="svg"]/*[name()="path" and @fill="#54C21F"]/..').first
+                seletor_svg_play = page.locator('//*[name()="svg"]/*[name()="circle" and @fill="#54C21F"]/.. | //*[name()="svg"]/*[name()="path" and @fill="#54C21F"]/..').first
 
-                if play_selector.is_visible(timeout=5000):
-                    play_selector.click(force=True)
+                if seletor_svg_play.is_visible(timeout=5000):
+                    seletor_svg_play.click(force=True)
                     print("--> SUCESSO: Clique direto no SVG verde realizado!")
                 else:
-                    # Injeção nativa via script executado no DOM para garantir o clique no componente do React
-                    print("--> Buscando SVG via injeção JavaScript DOM...")
+                    print("--> Buscando SVG verde via injeção JavaScript DOM...")
                     clicado = page.evaluate("""
                         () => {
                             const svgs = Array.from(document.querySelectorAll('svg'));
@@ -124,37 +122,52 @@ def executar_bot(acao, regra_dias="seg_a_sab", forcar=False, hora_inicio="08", h
                     if clicado:
                         print("--> SUCESSO: Clique via script injetado no SVG verde executado!")
                     else:
-                        print("--> AVISO: Elemento SVG verde não encontrado na página. A transmissão já pode estar em andamento.")
+                        print("--> AVISO: SVG verde não encontrado. A transmissão já pode estar ativa.")
 
                 page.wait_for_timeout(2000)
 
-                # Confirma se abriu modal ao iniciar
                 btn_confirmar_play = page.locator('button:has-text("Sim"), button:has-text("Iniciar"), button:has-text("Continuar")').last
                 if btn_confirmar_play.is_visible(timeout=3000):
                     btn_confirmar_play.click(force=True)
                     print("--> SUCESSO: Modal de início confirmado!")
 
             elif acao == "stop":
-                print("5. Localizando botão de Pause...")
-                clicado = page.evaluate("""
-                    () => {
-                        const svgs = Array.from(document.querySelectorAll('svg'));
-                        const target = svgs.find(s => !s.outerHTML.includes('#54C21F') && (s.outerHTML.includes('pause') || s.closest('td')));
-                        if (target) {
-                            const clickable = target.closest('button') || target.closest('div') || target;
-                            clickable.click();
-                            return true;
-                        }
-                        return false;
-                    }
-                """)
-                
-                page.wait_for_timeout(2000)
+                print("5. Procurando botão de Pause pelo SVG laranja (#DF911D)...")
 
-                btn_confirmar_stop = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
-                if btn_confirmar_stop.is_visible(timeout=5000):
-                    btn_confirmar_stop.click(force=True)
-                    print("--> SUCESSO: Modal de pausa confirmado!")
+                seletor_svg_pause = page.locator('//*[name()="svg"]/*[name()="circle" and @fill="#DF911D"]/.. | //*[name()="svg"]/*[name()="path" and @stroke="#DF911D"]/..').first
+
+                clicado_pause = False
+                if seletor_svg_pause.is_visible(timeout=5000):
+                    seletor_svg_pause.click(force=True)
+                    print("   --> Clique direto no SVG laranja efetuado!")
+                    clicado_pause = True
+                else:
+                    print("   --> Buscando SVG laranja via injeção JavaScript DOM...")
+                    clicado_pause = page.evaluate("""
+                        () => {
+                            const svgs = Array.from(document.querySelectorAll('svg'));
+                            const target = svgs.find(s => s.outerHTML.includes('#DF911D') || s.outerHTML.includes('clip0_7596'));
+                            if (target) {
+                                const clickable = target.closest('button') || target.closest('div') || target;
+                                clickable.click();
+                                return true;
+                            }
+                            return false;
+                        }
+                    """)
+                    if clicado_pause:
+                        print("   --> Clique via script injetado no SVG laranja executado!")
+
+                if clicado_pause:
+                    page.wait_for_timeout(2000)
+                    btn_confirmar_stop = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
+                    if btn_confirmar_stop.is_visible(timeout=5000):
+                        btn_confirmar_stop.click(force=True)
+                        print("--> SUCESSO: Modal de pausa confirmado com sucesso!")
+                    else:
+                        print("--> SUCESSO: Comando de pausa enviado (modal não exigido ou auto-fechado).")
+                else:
+                    print("--> AVISO: Botão laranja de Pause não localizado. A transmissão já pode estar pausada.")
 
             page.wait_for_timeout(4000)
 
