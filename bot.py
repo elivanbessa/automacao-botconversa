@@ -105,7 +105,16 @@ def executar_bot(acao, regra_dias="seg_a_sab", forcar=False, hora_inicio="08", h
                 
                 if btn_play.is_visible(timeout=5000):
                     btn_play.click(force=True)
-                    print("--> SUCESSO: Botão de Play acionado na transmissão!")
+                    print("   --> Ícone de Play clicado. Checando modal de confirmação...")
+                    page.wait_for_timeout(2000)
+
+                    # Tenta confirmar caso apareça um modal de confirmação ao iniciar
+                    btn_confirmar_start = page.locator('button:has-text("Sim"), button:has-text("Iniciar"), button:has-text("Continuar")').last
+                    if btn_confirmar_start.is_visible(timeout=3000):
+                        btn_confirmar_start.click(force=True)
+                        print("--> SUCESSO: Modal confirmado! Transmissão iniciada.")
+                    else:
+                        print("--> SUCESSO: Botão de Play acionado diretamente na transmissão!")
                 else:
                     btn_play_geral = page.locator('table button, td svg, td div[role="button"]').first
                     if btn_play_geral.is_visible(timeout=5000):
@@ -124,9 +133,9 @@ def executar_bot(acao, regra_dias="seg_a_sab", forcar=False, hora_inicio="08", h
                     page.wait_for_timeout(2000)
 
                     # Confirmação no modal "Sim, pausar esta transmissão"
-                    btn_confirmar = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
-                    if btn_confirmar.is_visible(timeout=5000):
-                        btn_confirmar.click(force=True)
+                    btn_confirmar_stop = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
+                    if btn_confirmar_stop.is_visible(timeout=5000):
+                        btn_confirmar_stop.click(force=True)
                         print("--> SUCESSO: Modal confirmado! Transmissão pausada.")
                     else:
                         print("   --> AVISO: Botão de confirmação no modal não localizado.")
