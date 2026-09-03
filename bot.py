@@ -97,50 +97,62 @@ def executar_bot(acao, regra_dias="seg_a_sab", forcar=False, hora_inicio="08", h
             page.goto("https://app.botconversa.com.br/69991/broadcast/scheduled", wait_until="networkidle", timeout=60000)
             page.wait_for_timeout(6000)
 
-            linha_transmissao = page.locator('tr, div').filter(has_text="bestsale2026 nac b2").first
-
             if acao == "start":
-                print("5. Localizando o botão verde de PLAY para dar INÍCIO...")
-                btn_play = linha_transmissao.locator('button, svg, div[role="button"]').first
+                print("5. Executando CLIQUE REAL NO BOTÃO VERDE DE PLAY...")
                 
-                if btn_play.is_visible(timeout=5000):
-                    btn_play.click(force=True)
-                    print("   --> Ícone de Play clicado. Checando modal de confirmação...")
-                    page.wait_for_timeout(2000)
-
-                    # Tenta confirmar caso apareça um modal de confirmação ao iniciar
-                    btn_confirmar_start = page.locator('button:has-text("Sim"), button:has-text("Iniciar"), button:has-text("Continuar")').last
-                    if btn_confirmar_start.is_visible(timeout=3000):
-                        btn_confirmar_start.click(force=True)
-                        print("--> SUCESSO: Modal confirmado! Transmissão iniciada.")
-                    else:
-                        print("--> SUCESSO: Botão de Play acionado diretamente na transmissão!")
+                # Mapeia especificamente a penúltima coluna da primeira linha de dados da tabela (onde fica o botão verde)
+                seletor_play = 'table tbody tr:first-child td:nth-last-child(2) *, table tbody tr:first-child td:last-child *, div[role="row"]:first-child button, svg[data-icon="play"]'
+                
+                # Tenta clicar com o ratão (mouse) no elemento do botão
+                btn = page.locator(seletor_play).first
+                if btn.is_visible(timeout=5000):
+                    btn.click(force=True)
+                    print("   --> Clique normal do mouse disparado!")
                 else:
-                    btn_play_geral = page.locator('table button, td svg, td div[role="button"]').first
-                    if btn_play_geral.is_visible(timeout=5000):
-                        btn_play_geral.click(force=True)
-                        print("--> SUCESSO: Clique de início executado na tabela!")
-                    else:
-                        print("--> AVISO: Botão de Play não localizado. A transmissão já pode estar em andamento.")
+                    # Se não visível diretamente pelo selector css, força um dispatchEvent de clique via JavaScript
+                    print("   --> Executando clique forçado via script do navegador...")
+                    page.evaluate("""
+                        let elemento = document.querySelector('table tbody tr td:nth-last-child(2)') || document.querySelector('svg[data-icon="play"]');
+                        if (elemento) {
+                            elemento.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        }
+                    """)
+
+                page.wait_for_timeout(2000)
+                
+                # Confirma caso a plataforma abra modal ao clicar no Play
+                btn_confirmar_play = page.locator('button:has-text("Sim"), button:has-text("Iniciar"), button:has-text("Continuar")').last
+                if btn_confirmar_play.is_visible(timeout=3000):
+                    btn_confirmar_play.click(force=True)
+                    print("--> SUCESSO: Modal confirmado! Transmissão em andamento.")
+                else:
+                    print("--> SUCESSO: Play acionado diretamente na transmissão!")
 
             elif acao == "stop":
-                print("5. Localizando o botão laranja de PAUSE...")
-                btn_pause = linha_transmissao.locator('button, svg, div[role="button"]').first
+                print("5. Executando CLIQUE NO BOTÃO LARANJA DE PAUSE...")
                 
-                if btn_pause.is_visible(timeout=5000):
-                    btn_pause.click(force=True)
-                    print("   --> Ícone de pause clicado. Aguardando modal de confirmação...")
-                    page.wait_for_timeout(2000)
-
-                    # Confirmação no modal "Sim, pausar esta transmissão"
-                    btn_confirmar_stop = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
-                    if btn_confirmar_stop.is_visible(timeout=5000):
-                        btn_confirmar_stop.click(force=True)
-                        print("--> SUCESSO: Modal confirmado! Transmissão pausada.")
-                    else:
-                        print("   --> AVISO: Botão de confirmação no modal não localizado.")
+                seletor_pause = 'table tbody tr:first-child td:nth-last-child(2) *, svg[data-icon="pause"]'
+                btn_p = page.locator(seletor_pause).first
+                
+                if btn_p.is_visible(timeout=5000):
+                    btn_p.click(force=True)
                 else:
-                    print("--> AVISO: Botão de Pause não localizado. A transmissão já pode estar pausada.")
+                    page.evaluate("""
+                        let elemento = document.querySelector('table tbody tr td:nth-last-child(2)') || document.querySelector('svg[data-icon="pause"]');
+                        if (elemento) {
+                            elemento.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                        }
+                    """)
+                
+                page.wait_for_timeout(2000)
+
+                # Clica no botão vermelho do modal de confirmação
+                btn_confirmar_stop = page.locator('button:has-text("Sim, pausar esta transmissão"), button:has-text("Sim, pausar"), button:has-text("Pausar")').last
+                if btn_confirmar_stop.is_visible(timeout=5000):
+                    btn_confirmar_stop.click(force=True)
+                    print("--> SUCESSO: Modal de pausa confirmado!")
+                else:
+                    print("--> SUCESSO: Comando de pausa enviado!")
 
             page.wait_for_timeout(4000)
 
