@@ -1,9 +1,9 @@
 name: Triagem de Caixa de Entrada (IA Gemini)
 
 on:
-  schedule:
+ # schedule:
     - cron: '*/30 * * * *'  # Roda automaticamente a cada 30 minutos
-
+#
   workflow_dispatch:         # Permite rodar manualmente a qualquer momento
 
 jobs:
